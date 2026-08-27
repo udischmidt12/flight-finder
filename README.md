@@ -4,6 +4,8 @@ Finds the cheapest flight from your home airport to one representative airport p
 
 **Book** opens Skyscanner. For a Skyscanner-sourced fare it deep-links to that one flight's vendor list (`/transport/flights/<o>/<d>/<yymmdd>/config/<itinerary-id>/`) so you pick which agent to book with; otherwise it opens the flight list for that route + date. Inside the Claude desktop app it copies the link rather than navigating (a webview → external-site navigation there can crash the host app).
 
+**Scan a receipt** (Expenses tab): attach a photo or PDF of a receipt/invoice and Claude reads the total, currency, date and merchant off it (`POST /api/receipts/scan`, ~1–3¢ per scan). The values pre-fill the expense form — country is set from your GPS location — and you confirm with **Add expense**. Needs `ANTHROPIC_API_KEY`; the rest of the Expenses tab works without it.
+
 ## Setup
 
 1. `pip install -r requirements.txt`
@@ -13,6 +15,7 @@ Finds the cheapest flight from your home airport to one representative airport p
    ```
    SERPAPI_KEY=your_serpapi_key          # Google Flights engine
    RAPIDAPI_KEY=your_rapidapi_key        # Skyscanner engine (optional; skipped if unset)
+   ANTHROPIC_API_KEY=your_anthropic_key  # Expenses tab "Scan a receipt" (optional)
    # optional: require HTTP basic auth (password only)
    APP_ACCESS_TOKEN=some_shared_secret
    ```

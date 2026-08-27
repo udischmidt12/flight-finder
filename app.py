@@ -18,6 +18,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from countries import all_countries, origin_regions, REGION_LABELS
 from flights import search_cheapest_flight, FlightApiError
 import skyscanner
+import receipts
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
 
 app = Flask(__name__)
@@ -294,6 +295,30 @@ def export_expenses():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=expenses_export.csv"},
     )
+
+
+RECEIPT_MAX_BYTES = 8 * 1024 * 1024
+
+
+@app.route("/api/receipts/scan", methods=["POST"])
+@require_auth
+def scan_receipt():
+    """Read a receipt/invoice image or PDF with Claude and return
+    {amount, currency, date, merchant} for the expense form to pre-fill."""
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "no file uploaded"}), 400
+
+    data = f.read(RECEIPT_MAX_BYTES + 1)
+    if len(data) > RECEIPT_MAX_BYTES:
+        return jsonify({"error": "file is larger than 8 MB"}), 400
+
+    try:
+        result = receipts.scan(data, f.mimetype)
+    except receipts.ReceiptError as e:
+        return jsonify({"error": str(e)}), 502
+
+    return jsonify(result)
 
 
 if __name__ == "__main__":

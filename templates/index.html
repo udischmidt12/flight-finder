@@ -834,6 +834,14 @@
   .save-expense-btn:active { transform: translateY(1px) scale(0.98); box-shadow: var(--clay-in); }
   .save-expense-btn:disabled { opacity: 0.65; box-shadow: var(--clay-in); cursor: default; }
 
+  .receipt-status {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 0.5rem 0 0;
+  }
+  .receipt-status.receipt-error { color: var(--coral); }
+
   .cancel-edit-btn {
     background: var(--surface-raised);
     color: var(--muted);
@@ -1000,6 +1008,13 @@
     </section>
 
     <section class="expense-form">
+      <div>
+        <label class="form-label" for="receipt-file">Scan a receipt / invoice</label>
+        <input class="form-input" type="file" id="receipt-file"
+               accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+        <p class="receipt-status" id="receipt-status" hidden></p>
+      </div>
+
       <div>
         <label class="form-label" for="expense-country">Country</label>
         <select class="form-select" id="expense-country">
@@ -1717,6 +1732,65 @@
     // pre-fill currency for whatever country is selected by default (first in list)
     expenseCurrencyInput.value = currencyForCountry(expenseCountrySelect.value);
 
+    // --- Scan a receipt -> pre-fill the form ---
+    const receiptFileInput = document.getElementById('receipt-file');
+    const receiptStatus = document.getElementById('receipt-status');
+
+    function setReceiptStatus(msg, isError) {
+      receiptStatus.hidden = false;
+      receiptStatus.className = 'receipt-status' + (isError ? ' receipt-error' : '');
+      receiptStatus.textContent = msg;
+    }
+
+    if (receiptFileInput) {
+      receiptFileInput.addEventListener('change', async () => {
+        const file = receiptFileInput.files && receiptFileInput.files[0];
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) {
+          setReceiptStatus('That file is over 8 MB — pick a smaller one.', true);
+          return;
+        }
+
+        setReceiptStatus('Reading the receipt…', false);
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const resp = await fetch('/api/receipts/scan', { method: 'POST', body: fd });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'scan failed');
+
+          // Country from GPS when we have a match; otherwise keep the current pick.
+          if (gpsCountry && [...expenseCountrySelect.options].some(o => o.value === gpsCountry)) {
+            expenseCountrySelect.value = gpsCountry;
+            userPickedCountry = true;
+          }
+
+          if (data.amount != null) expenseAmountInput.value = data.amount;
+          if (data.currency) expenseCurrencyInput.value = data.currency;
+          else if (expenseCountrySelect.value) expenseCurrencyInput.value = currencyForCountry(expenseCountrySelect.value);
+          if (data.date) expenseDateInput.value = data.date;
+          if (data.merchant && !expenseNoteInput.value) expenseNoteInput.value = data.merchant;
+
+          if (data.amount != null) {
+            const where = expenseCountrySelect.value ? ` for ${expenseCountrySelect.value}` : '';
+            setReceiptStatus(
+              `Found ${data.amount} ${data.currency || ''}${where}`.replace(/\s+/g, ' ').trim()
+              + ' — check it and tap Add expense.', false);
+          } else {
+            setReceiptStatus("Couldn't read a total — enter it manually.", true);
+          }
+        } catch (err) {
+          setReceiptStatus(`Couldn't scan: ${err.message}`, true);
+        }
+      });
+    }
+
+    function clearReceiptInput() {
+      if (!receiptFileInput) return;
+      receiptFileInput.value = '';
+      receiptStatus.hidden = true;
+    }
+
     expenseCategoryPills.querySelectorAll('.category-pill').forEach(pill => {
       pill.addEventListener('click', () => {
         expenseCategoryPills.querySelectorAll('.category-pill').forEach(p => p.setAttribute('aria-pressed', 'false'));
@@ -1826,6 +1900,7 @@
       cancelEditBtn.hidden = true;
       expenseAmountInput.value = '';
       expenseNoteInput.value = '';
+      clearReceiptInput();
     }
 
     cancelEditBtn.addEventListener('click', stopEditingExpense);
@@ -1926,6 +2001,7 @@
         } else {
           expenseAmountInput.value = '';
           expenseNoteInput.value = '';
+          clearReceiptInput();
         }
         loadExpenses();
       } catch (err) {
