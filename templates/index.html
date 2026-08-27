@@ -467,6 +467,7 @@
   }
 
   .book-btn {
+    display: inline-block;
     font-family: var(--font-display);
     font-size: 0.78rem;
     font-weight: 600;
@@ -485,17 +486,6 @@
   .book-btn:hover { transform: translateY(-1px); }
   .book-btn:active { transform: translateY(1px) scale(0.97); box-shadow: var(--clay-in); }
   .book-btn:focus-visible { outline: 3px solid var(--accent-press); outline-offset: 3px; }
-  .book-btn:disabled { opacity: 0.65; box-shadow: var(--clay-in); cursor: default; }
-
-  .book-error {
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--coral);
-    text-align: right;
-    max-width: 150px;
-  }
-
-  .book-error a { color: var(--coral); }
 
   .empty, .loading {
     font-size: 0.92rem;
@@ -1202,8 +1192,9 @@
       });
     });
 
-    // GPS auto-detect on load
-    if (navigator.geolocation) {
+    // GPS auto-detect on load -- entirely optional, never allowed to throw.
+    try {
+      if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
@@ -1235,6 +1226,9 @@
         },
         { timeout: 8000, maximumAge: 600000 }
       );
+      }
+    } catch (e) {
+      /* no geolocation, no problem -- default airport stands */
     }
 
     function formatDuration(minutes) {
@@ -1258,8 +1252,18 @@
       return '';
     }
 
-    function bookingUrl(originCode, destCode, date) {
-      const q = encodeURIComponent(`Flights from ${originCode} to ${destCode} on ${date}`);
+    // Where "Book" points. A plain https link the browser opens in a new
+    // tab -- no popups, no navigation of this app, nothing that can wedge
+    // an embedded webview. Skyscanner-sourced fares go to Skyscanner's
+    // results page, everything else to Google Flights.
+    function bookHref(source, originCode, destCode, dateISO) {
+      const o = String(originCode || '').toLowerCase();
+      const d = String(destCode || '').toLowerCase();
+      if (source === 'skyscanner' && /^\d{4}-\d{2}-\d{2}$/.test(dateISO || '')) {
+        const ymd = dateISO.slice(2).replace(/-/g, '');  // YYYY-MM-DD -> YYMMDD
+        return `https://www.skyscanner.net/transport/flights/${o}/${d}/${ymd}/?adultsv2=1`;
+      }
+      const q = encodeURIComponent(`Flights from ${originCode} to ${destCode} on ${dateISO}`);
       return `https://www.google.com/travel/flights?q=${q}`;
     }
 
@@ -1284,8 +1288,6 @@
       `;
     }
 
-    let bookingContext = [];
-
     function renderResults(data) {
       results.hidden = false;
       const head = `
@@ -1302,7 +1304,6 @@
         return;
       }
 
-      bookingContext = [];
       let rows = '';
       data.results.forEach((r, i) => {
         const isBest = i === 0;
@@ -1316,15 +1317,6 @@
           flightTag = `<span class="flight-tag stops">${stopWord}${via ? ' via ' + via : ''}</span>`;
         }
 
-        const ctxIndex = bookingContext.length;
-        bookingContext.push({
-          country: data.country,
-          origin: data.origin,
-          destination: data.airport,
-          date: r.date,
-          token: r.booking_token || '',
-        });
-
         rows += `
           <div class="row ${isBest ? 'best' : ''}" style="animation-delay: ${i * 40}ms">
             <div class="row-main">
@@ -1335,7 +1327,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                <button class="book-btn" type="button" data-idx="${ctxIndex}">Book</button>
+                <a class="book-btn" href="${bookHref(r.source, data.origin, data.airport, r.date)}" target="_blank" rel="noopener noreferrer">Book</a>
               </div>
             </div>
           </div>
@@ -1349,82 +1341,6 @@
 
       results.innerHTML = head + rows + skippedNote;
     }
-
-    function escapeAttr(s) {
-      return String(s).replace(/[&<>"']/g, c => (
-        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-      ));
-    }
-
-    // Google's booking redirect is a POST, not a link. Write a tiny
-    // self-submitting form into the already-open tab so the booking opens
-    // there instead of navigating this app away.
-    function writeBookingForm(win, url, postData) {
-      const params = new URLSearchParams(postData);
-      let inputs = '';
-      params.forEach((value, key) => {
-        inputs += `<input type="hidden" name="${escapeAttr(key)}" value="${escapeAttr(value)}">`;
-      });
-      win.document.write(
-        `<!doctype html><meta charset="utf-8"><title>Opening booking…</title>` +
-        `<body style="font:15px system-ui;padding:2rem">Opening booking…` +
-        `<form id="b" method="POST" action="${escapeAttr(url)}">${inputs}</form>` +
-        `<script>document.getElementById('b').submit();<\/script>`
-      );
-      win.document.close();
-    }
-
-    function showBookingLink(btn, href) {
-      const existing = btn.closest('.row-right').querySelector('.book-error');
-      if (existing) existing.remove();
-      const notice = document.createElement('div');
-      notice.className = 'book-error';
-      notice.innerHTML = `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">Open booking ↗</a>`;
-      btn.closest('.row-right').appendChild(notice);
-    }
-
-    results.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.book-btn');
-      if (!btn) return;
-      const ctx = bookingContext[Number(btn.dataset.idx)];
-      if (!ctx) return;
-
-      const fallback = bookingUrl(ctx.origin, ctx.destination, ctx.date);
-      const originalText = btn.textContent;
-      btn.textContent = '…';
-      btn.disabled = true;
-
-      // Open the tab now, synchronously, while we still have the click
-      // gesture -- otherwise the popup gets blocked after the await.
-      const bookingTab = window.open('about:blank', '_blank');
-
-      try {
-        const resp = await fetch(`/book/${encodeURIComponent(ctx.country)}?origin=${encodeURIComponent(ctx.origin)}&date=${encodeURIComponent(ctx.date)}&token=${encodeURIComponent(ctx.token)}`);
-        const data = await resp.json();
-
-        if (data.book_with) {
-          btn.textContent = `Opening ${data.book_with}…`;
-          await new Promise(r => setTimeout(r, 400));
-        }
-
-        const target = data.url || fallback;
-        if (!bookingTab) {
-          // popup blocked -- leave a link they can click themselves
-          showBookingLink(btn, target);
-        } else if (data.url && data.post_data) {
-          writeBookingForm(bookingTab, data.url, data.post_data);
-        } else {
-          bookingTab.opener = null;
-          bookingTab.location.replace(target);
-        }
-      } catch (err) {
-        if (bookingTab) bookingTab.close();
-        showBookingLink(btn, fallback);
-      } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }
-    });
 
     async function runSearch(country) {
       renderLoading(country);
@@ -1506,7 +1422,6 @@
         return;
       }
 
-      bookingContext = [];
       let rows = '';
       list.forEach((r, i) => {
         const isBest = i === 0;
@@ -1523,15 +1438,6 @@
           flightTag = `<span class="flight-tag stops">${stopWord}</span>`;
         }
 
-        const ctxIndex = bookingContext.length;
-        bookingContext.push({
-          country: r.country,
-          origin: r.origin,
-          destination: r.airport,
-          date: r.date,
-          token: r.booking_token || '',
-        });
-
         rows += `
           <div class="row ${isBest ? 'best' : ''}" style="animation-delay: ${i * 40}ms">
             <div class="row-main">
@@ -1545,7 +1451,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                <button class="book-btn" type="button" data-idx="${ctxIndex}">Book</button>
+                <a class="book-btn" href="${bookHref(r.source, r.origin, r.airport, r.date)}" target="_blank" rel="noopener noreferrer">Book</a>
               </div>
             </div>
           </div>
@@ -1561,12 +1467,30 @@
     }
 
     if (compareAllBtn) {
+      // Two-tap confirm instead of window.confirm() -- a blocking native
+      // dialog can wedge an embedded webview. First tap arms, second tap
+      // (within 4s) runs.
+      let compareArmed = false;
+      let compareArmTimer = null;
+      const compareIdleText = compareAllBtn.textContent;
+
+      function disarmCompare() {
+        compareArmed = false;
+        clearTimeout(compareArmTimer);
+        compareAllBtn.textContent = compareIdleText;
+      }
+
       compareAllBtn.addEventListener('click', async () => {
         const countries = [...document.querySelectorAll('.tile')].map(t => t.dataset.country);
         if (countries.length === 0) return;
 
-        const ok = confirm(`This checks all ${countries.length} destinations in your wishlist — ${countries.length} SerpApi searches against your quota. Continue?`);
-        if (!ok) return;
+        if (!compareArmed) {
+          compareArmed = true;
+          compareAllBtn.textContent = `Tap again — ${countries.length} searches`;
+          compareArmTimer = setTimeout(disarmCompare, 4000);
+          return;
+        }
+        disarmCompare();
 
         showAllDestinations();
         compareAllBtn.disabled = true;

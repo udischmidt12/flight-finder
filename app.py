@@ -6,7 +6,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from functools import wraps
-from urllib.parse import quote
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, Response
@@ -17,7 +16,7 @@ from flask import Flask, render_template, request, jsonify, Response
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from countries import candidate_countries, all_countries, origin_regions, REGION_LABELS
-from flights import search_cheapest_flight, get_booking_url, FlightApiError
+from flights import search_cheapest_flight, FlightApiError
 import skyscanner
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
 
@@ -186,7 +185,6 @@ def search_country(country):
             "is_direct": flight["is_direct"],
             "layovers": flight["layovers"],
             "total_duration_minutes": flight["total_duration_minutes"],
-            "booking_token": flight.get("booking_token"),
             "source": flight.get("source", "google"),
         })
 
@@ -200,52 +198,6 @@ def search_country(country):
         "skipped_dates": skipped_dates,
         "window_days": SEARCH_WINDOW_DAYS,
     })
-
-
-@app.route("/book/<country>")
-@require_auth
-def book_flight(country):
-    config = load_config()
-    if config is None:
-        return jsonify({"error": "config.json not found"}), 500
-
-    origin = request.args.get("origin", "")
-    travel_date = request.args.get("date", "")
-    booking_token = request.args.get("token", "")
-
-    if not AIRPORT_CODE_RE.match(origin or ""):
-        return jsonify({"error": "invalid origin"}), 400
-    origin = origin.upper()
-
-    visited = config.get("visited_countries", [])
-    wishlist_countries = config.get("wishlist_countries")
-    wishlist, _ = candidate_countries(visited, wishlist_countries)
-
-    entry = wishlist.get(country)
-    if not entry:
-        return jsonify({"error": f"{country} is not in your wishlist"}), 404
-    destination = entry["airport"]
-
-    fallback_url = (
-        "https://www.google.com/travel/flights?q="
-        + quote(f"Flights from {origin} to {destination} on {travel_date}")
-    )
-
-    if not booking_token:
-        return jsonify({"url": fallback_url, "post_data": None, "book_with": None})
-
-    try:
-        booking = get_booking_url(booking_token, origin, destination, travel_date)
-    except FlightApiError:
-        booking = None
-
-    if booking:
-        return jsonify({
-            "url": booking["url"],
-            "post_data": booking.get("post_data"),
-            "book_with": booking.get("book_with"),
-        })
-    return jsonify({"url": fallback_url, "post_data": None, "book_with": None})
 
 
 @app.route("/api/expenses", methods=["GET"])

@@ -167,7 +167,6 @@ def _parse_itinerary(it):
         "is_direct": stop_count == 0,
         "layovers": layovers,
         "total_duration_minutes": leg.get("durationInMinutes"),
-        "booking_token": None,
         "source": "skyscanner",
     }
 
