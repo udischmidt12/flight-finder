@@ -168,6 +168,9 @@ def _parse_itinerary(it):
         "layovers": layovers,
         "total_duration_minutes": leg.get("durationInMinutes"),
         "source": "skyscanner",
+        # Skyscanner's own itinerary id -- used verbatim as the /config/
+        # path segment in the deep link to this flight's vendor list.
+        "itinerary_id": it.get("id"),
     }
 
 

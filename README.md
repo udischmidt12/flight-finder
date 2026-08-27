@@ -2,7 +2,7 @@
 
 Finds the cheapest flight from your home airport to one representative airport per country on your wishlist. Each route is checked against **two engines — SerpApi (Google Flights) and Skyscanner (via RapidAPI)** — and the cheaper fare wins; if one engine is down or returns nothing, the other still answers. Also tracks trip expenses with currency conversion to ILS.
 
-**Book** on a Google-sourced fare calls `/book` (one extra SerpApi search, cached per flight) to get the seller's booking link and opens it directly — the airline/OTA with the flight preselected. If that's a POST redirect or there's no token, it opens the Skyscanner page for that route/date instead. Inside the Claude desktop app it copies the link rather than navigating (a webview → external-site navigation there can crash the host app).
+**Book** opens Skyscanner. For a Skyscanner-sourced fare it deep-links to that one flight's vendor list (`/transport/flights/<o>/<d>/<yymmdd>/config/<itinerary-id>/`) so you pick which agent to book with; otherwise it opens the flight list for that route + date. Inside the Claude desktop app it copies the link rather than navigating (a webview → external-site navigation there can crash the host app).
 
 ## Setup
 

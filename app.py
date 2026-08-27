@@ -16,7 +16,7 @@ from flask import Flask, render_template, request, jsonify, Response
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from countries import candidate_countries, all_countries, origin_regions, REGION_LABELS
-from flights import search_cheapest_flight, get_booking_url, FlightApiError
+from flights import search_cheapest_flight, FlightApiError
 import skyscanner
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
 
@@ -186,9 +186,9 @@ def search_country(country):
             "layovers": flight["layovers"],
             "total_duration_minutes": flight["total_duration_minutes"],
             "source": flight.get("source", "google"),
-            # Only SerpApi/Google fares carry this; used by /book to look
-            # up the real seller link for that exact flight.
-            "booking_token": flight.get("booking_token"),
+            # Skyscanner-sourced fares carry the itinerary id -> the Book
+            # link deep-links to that one flight's vendor list on Skyscanner.
+            "skyscanner_config": flight.get("itinerary_id"),
         })
 
     results.sort(key=lambda r: r["price"] if r["price"] is not None else float("inf"))
@@ -200,37 +200,6 @@ def search_country(country):
         "results": results,
         "skipped_dates": skipped_dates,
         "window_days": SEARCH_WINDOW_DAYS,
-    })
-
-
-@app.route("/book")
-@require_auth
-def book():
-    """Resolve a Google/SerpApi booking_token to the seller's booking link
-    (airline or OTA, flight preselected). Returns {url, post_data,
-    book_with} -- all null if there's no token or nothing was found, in
-    which case the client falls back to the Skyscanner page. Costs one
-    SerpApi search per call."""
-    token = request.args.get("token", "")
-    origin = (request.args.get("origin") or "").upper()
-    dest = (request.args.get("dest") or "").upper()
-    travel_date = request.args.get("date", "")
-
-    empty = {"url": None, "post_data": None, "book_with": None}
-    if not token or not AIRPORT_CODE_RE.match(origin) or not AIRPORT_CODE_RE.match(dest):
-        return jsonify(empty)
-
-    try:
-        booking = get_booking_url(token, origin, dest, travel_date)
-    except FlightApiError:
-        booking = None
-
-    if not booking:
-        return jsonify(empty)
-    return jsonify({
-        "url": booking.get("url"),
-        "post_data": booking.get("post_data"),
-        "book_with": booking.get("book_with"),
     })
 
 
