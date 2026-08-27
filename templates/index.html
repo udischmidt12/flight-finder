@@ -1272,24 +1272,27 @@
       return '';
     }
 
-    // Where "Book" points. Skyscanner-sourced fares go to Skyscanner's
-    // results page, everything else to Google Flights.
-    function bookHref(source, originCode, destCode, dateISO) {
+    // Where "Book" points: Skyscanner's results page for this exact route
+    // and date, one-way, 1 adult. That page lists every flight for the
+    // trip with prices and a "Select" button that goes straight to the
+    // airline or agent -- not a general search box.
+    function bookHref(originCode, destCode, dateISO) {
       const o = String(originCode || '').toLowerCase();
       const d = String(destCode || '').toLowerCase();
-      if (source === 'skyscanner' && /^\d{4}-\d{2}-\d{2}$/.test(dateISO || '')) {
+      const m = /^\d{4}-\d{2}-\d{2}$/.test(dateISO || '');
+      if (o && d && m) {
         const ymd = dateISO.slice(2).replace(/-/g, '');  // YYYY-MM-DD -> YYMMDD
-        return `https://www.skyscanner.net/transport/flights/${o}/${d}/${ymd}/?adultsv2=1`;
+        return `https://www.skyscanner.net/transport/flights/${o}/${d}/${ymd}/` +
+               `?adultsv2=1&rtn=0&preferdirects=false`;
       }
-      const q = encodeURIComponent(`Flights from ${originCode} to ${destCode} on ${dateISO}`);
-      return `https://www.google.com/travel/flights?q=${q}`;
+      return `https://www.skyscanner.net/routes/${o}/${d}/`;  // no date -> route page
     }
 
     // The "Book" control. In a normal browser it's a plain new-tab link.
     // Inside the Claude desktop app it's a button that copies the link --
     // no navigation, because that path can crash the host app.
-    function bookControl(source, originCode, destCode, dateISO) {
-      const href = bookHref(source, originCode, destCode, dateISO);
+    function bookControl(originCode, destCode, dateISO) {
+      const href = bookHref(originCode, destCode, dateISO);
       if (IN_CLAUDE_DESKTOP) {
         return `<button class="book-btn" type="button" data-book-url="${encodeURIComponent(href)}">Copy link</button>`;
       }
@@ -1420,7 +1423,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                ${bookControl(r.source, data.origin, data.airport, r.date)}
+                ${bookControl(data.origin, data.airport, r.date)}
               </div>
             </div>
           </div>
@@ -1544,7 +1547,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                ${bookControl(r.source, r.origin, r.airport, r.date)}
+                ${bookControl(r.origin, r.airport, r.date)}
               </div>
             </div>
           </div>
