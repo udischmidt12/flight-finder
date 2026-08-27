@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#E7E3F3">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Flight Finder">
 <title>Cheapest Flight Finder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2211,6 +2216,12 @@
         saveExpenseBtn.textContent = editingId ? 'Update expense' : 'Add expense';
       }
     });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}");
+      });
+    }
   </script>
 </body>
 </html>
