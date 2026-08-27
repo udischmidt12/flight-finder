@@ -7,7 +7,13 @@ from datetime import date, timedelta
 from functools import wraps
 from urllib.parse import quote
 
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, Response
+
+# Load a local .env (SERPAPI_KEY, APP_ACCESS_TOKEN, ...) if present. Real
+# environment variables always win over .env values. No-op if the file is
+# absent, so this is safe on PythonAnywhere where the vars are set for real.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from countries import candidate_countries, all_countries, origin_regions, REGION_LABELS
 from flights import search_cheapest_flight, get_booking_url, FlightApiError
