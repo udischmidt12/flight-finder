@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from functools import wraps
 from urllib.parse import quote
@@ -142,21 +143,31 @@ def search_country(country):
     for d in dates:
         candidates = []
 
-        # Google Flights (SerpApi) -- still authoritative for hard errors
-        # like a missing API key.
-        try:
-            g = search_cheapest_flight(origin, airport, d, direct_only=direct_only)
-        except FlightApiError as e:
-            return jsonify({"error": str(e)}), 500
+        # Hit both engines at once so the search isn't the sum of two API
+        # round-trips.
+        def _skyscanner_leg():
+            try:
+                return skyscanner.search_cheapest_flight(
+                    origin, airport, d, direct_only=direct_only)
+            except skyscanner.SkyscannerError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            g_future = pool.submit(
+                search_cheapest_flight, origin, airport, d, direct_only=direct_only)
+            s_future = pool.submit(_skyscanner_leg)
+
+            # Google Flights (SerpApi) -- still authoritative for hard
+            # errors like a missing API key.
+            try:
+                g = g_future.result()
+            except FlightApiError as e:
+                return jsonify({"error": str(e)}), 500
+            s = s_future.result()  # best-effort supplement, never fatal
+
         if g and g.get("price") is not None:
             g.setdefault("source", "google")
             candidates.append(g)
-
-        # Skyscanner (RapidAPI) -- best-effort supplement, never fatal.
-        try:
-            s = skyscanner.search_cheapest_flight(origin, airport, d, direct_only=direct_only)
-        except skyscanner.SkyscannerError:
-            s = None
         if s and s.get("price") is not None:
             candidates.append(s)
 
