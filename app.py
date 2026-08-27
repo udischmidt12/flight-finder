@@ -322,17 +322,24 @@ def scan_receipt():
     return jsonify(result)
 
 
+PASSPORTS = {
+    "israeli": "Israeli", "israel": "Israeli",
+    "german": "German", "germany": "German",
+}
+
+
 @app.route("/api/prearrival/<country>")
 @require_auth
 def prearrival_info(country):
     """Current visa / arrival-form / entry essentials for a destination,
-    from Claude + web search. Cached ~2 weeks server-side; ?refresh=1
-    forces a re-fetch."""
+    tailored to ?passport=Israeli|German. Cached ~2 weeks per
+    country+passport; ?refresh=1 forces a re-fetch."""
     if country not in all_countries():
         return jsonify({"error": f"unknown country: {country}"}), 404
 
     config = load_config() or {}
-    passport = config.get("passport") or "Israel"
+    raw = request.args.get("passport") or config.get("passport") or "Israeli"
+    passport = PASSPORTS.get(raw.strip().lower(), "Israeli")
     force = request.args.get("refresh") == "1"
 
     try:

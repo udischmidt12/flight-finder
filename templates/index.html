@@ -610,6 +610,30 @@
     padding: 0.3rem;
   }
 
+  .passport-pick {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .passport-pick button {
+    flex: 1;
+    padding: 0.55rem 0.4rem;
+    background: var(--surface-raised);
+    border: none;
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--muted);
+    cursor: pointer;
+    box-shadow: var(--clay-sm);
+  }
+  .passport-pick button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-press);
+    box-shadow: var(--clay-in);
+  }
+
   .prearrival-body {
     overflow-y: auto;
     margin-bottom: 1.1rem;
@@ -1165,7 +1189,11 @@
   <div class="modal-overlay" id="prearrival-modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="prearrival-title">
       <p class="modal-title" id="prearrival-title">Before you go</p>
-      <p class="modal-sub" id="prearrival-sub"></p>
+      <p class="modal-sub" id="prearrival-sub">Entry essentials for your passport.</p>
+      <div class="passport-pick" id="passport-pick" role="group" aria-label="Passport">
+        <button type="button" data-passport="Israeli" aria-pressed="true">🇮🇱 Israeli</button>
+        <button type="button" data-passport="German" aria-pressed="false">🇩🇪 German</button>
+      </div>
       <div class="prearrival-body" id="prearrival-body"></div>
       <button class="modal-cancel" id="prearrival-close" type="button">Close</button>
     </div>
@@ -1366,29 +1394,58 @@
       if (e.key === 'Escape' && !preArrivalModal.hidden) closePreArrival();
     });
 
+    // Passport choice drives which country the visa info is written for.
+    let selectedPassport = 'Israeli';
+    try { selectedPassport = localStorage.getItem('passport') || 'Israeli'; } catch (_) {}
+    let currentPreArrivalCountry = null;
+
+    const passportPick = document.getElementById('passport-pick');
+    function syncPassportButtons() {
+      passportPick.querySelectorAll('button').forEach(b => {
+        b.setAttribute('aria-pressed', String(b.dataset.passport === selectedPassport));
+      });
+    }
+    syncPassportButtons();
+
+    passportPick.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.dataset.passport === selectedPassport) return;
+        selectedPassport = b.dataset.passport;
+        try { localStorage.setItem('passport', selectedPassport); } catch (_) {}
+        syncPassportButtons();
+        if (currentPreArrivalCountry) openPreArrival(currentPreArrivalCountry, false);
+      });
+    });
+
     async function openPreArrival(country, force) {
+      currentPreArrivalCountry = country;
       preArrivalTitle.textContent = `Before you go — ${country}`;
       preArrivalSub.textContent = 'Visa, arrival forms and entry essentials.';
       preArrivalModal.hidden = false;
 
-      const cached = !force && preArrivalCache.get(country);
+      const cacheKey = `${country}|${selectedPassport}`;
+      const cached = !force && preArrivalCache.get(cacheKey);
       if (cached) {
         paintPreArrival(country, cached);
         return;
       }
 
       preArrivalBody.innerHTML =
-        `<p class="prearrival-loading">Checking current entry requirements for ${escHtml(country)}…</p>`;
+        `<p class="prearrival-loading">Checking ${escHtml(selectedPassport)}-passport entry requirements for ${escHtml(country)}…</p>`;
       try {
-        const url = `/api/prearrival/${encodeURIComponent(country)}${force ? '?refresh=1' : ''}`;
-        const resp = await fetch(url);
+        const qs = new URLSearchParams({ passport: selectedPassport });
+        if (force) qs.set('refresh', '1');
+        const resp = await fetch(`/api/prearrival/${encodeURIComponent(country)}?${qs}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'lookup failed');
-        preArrivalCache.set(country, data);
-        paintPreArrival(country, data);
+        preArrivalCache.set(cacheKey, data);
+        // guard against a slow response landing after the user switched away
+        if (currentPreArrivalCountry === country) paintPreArrival(country, data);
       } catch (err) {
-        preArrivalBody.innerHTML =
-          `<p class="prearrival-error">Couldn't load it: ${escHtml(err.message)}</p>`;
+        if (currentPreArrivalCountry === country) {
+          preArrivalBody.innerHTML =
+            `<p class="prearrival-error">Couldn't load it: ${escHtml(err.message)}</p>`;
+        }
       }
     }
 
@@ -1396,8 +1453,9 @@
       const when = data.fetched_at
         ? new Date(data.fetched_at * 1000).toLocaleDateString()
         : '';
+      const pp = data.passport || selectedPassport;
       preArrivalBody.innerHTML =
-        `<button class="prearrival-refresh" type="button" data-country="${escHtml(country)}">↻ Refresh${when ? ` (checked ${escHtml(when)})` : ''}</button>` +
+        `<button class="prearrival-refresh" type="button">↻ Refresh${when ? ` · ${escHtml(pp)} passport, checked ${escHtml(when)}` : ''}</button>` +
         renderPreArrival(data.text || '');
       const btn = preArrivalBody.querySelector('.prearrival-refresh');
       if (btn) btn.addEventListener('click', () => openPreArrival(country, true));

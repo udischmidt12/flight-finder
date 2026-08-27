@@ -70,6 +70,45 @@ def _extract_text(resp):
     return "\n".join(p.strip() for p in parts if p and p.strip()).strip()
 
 
+_BULLET_RE = re.compile(r"^\s*[-*•]\s+")
+_SOURCES_RE = re.compile(r"^\s*sources?\s*:", re.I)
+
+
+def _normalize(text):
+    """Claude (with web search) tends to open with a line like 'I'll search
+    ...' and to wrap one bullet across several lines. Drop the preamble and
+    fold continuation lines back into their bullet so each line is one clean
+    point for the client to render."""
+    out = []
+    started = False
+    for raw in (text or "").replace("\r", "").split("\n"):
+        line = raw.rstrip()
+        s = line.strip()
+        if not s:
+            continue
+        is_bullet = bool(_BULLET_RE.match(line))
+        is_sources = bool(_SOURCES_RE.match(s))
+
+        if not started:
+            if is_bullet:
+                started = True
+                out.append(line)
+            continue  # skip any preamble before the first bullet
+
+        if is_bullet or is_sources:
+            out.append(line)
+        elif out:  # continuation of the previous line
+            if s in {".", ",", ";", ":", ")"}:
+                out[-1] = out[-1].rstrip() + s
+            else:
+                out[-1] = out[-1].rstrip() + " " + s
+        else:
+            out.append(line)
+
+    joined = re.sub(r"[ \t]+([,;:.)])", r"\1", "\n".join(out).strip())
+    return joined or (text or "").strip()
+
+
 def _clean_bad_request(msg):
     m = (msg or "").strip()
     low = m.lower()
@@ -112,7 +151,7 @@ def _call(country, passport):
     except anthropic.APIConnectionError:
         raise PreArrivalError("couldn't reach the Claude API")
 
-    text = _extract_text(resp)
+    text = _normalize(_extract_text(resp))
     if not text:
         raise PreArrivalError("no information came back")
     return text
@@ -139,17 +178,16 @@ def _save_cache(cache):
 
 
 def get(country, passport, force=False):
-    """Return {text, fetched_at, passport, cached}. Uses the disk cache
-    unless it's missing, older than the TTL, for a different passport, or
-    force=True."""
-    key = country.lower()
+    """Return {text, fetched_at, passport, cached}. Cached per
+    country+passport on disk; re-fetched if missing, older than the TTL,
+    or force=True."""
+    key = f"{country.lower()}|{passport.lower()}"
     now = time.time()
 
     if not force:
         hit = _load_cache().get(key)
-        if (hit and hit.get("text") and hit.get("passport") == passport
-                and now - hit.get("fetched_at", 0) < TTL_SECONDS):
-            return {**hit, "cached": True}
+        if hit and hit.get("text") and now - hit.get("fetched_at", 0) < TTL_SECONDS:
+            return {**hit, "text": _normalize(hit["text"]), "cached": True}
 
     text = _call(country, passport)
     entry = {"text": text, "fetched_at": now, "passport": passport}
