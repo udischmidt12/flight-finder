@@ -1350,22 +1350,37 @@
       results.innerHTML = head + rows + skippedNote;
     }
 
-    function submitBookingForm(url, postData) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = url;
-      form.style.display = 'none';
+    function escapeAttr(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
 
-      new URLSearchParams(postData).forEach((value, key) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
+    // Google's booking redirect is a POST, not a link. Write a tiny
+    // self-submitting form into the already-open tab so the booking opens
+    // there instead of navigating this app away.
+    function writeBookingForm(win, url, postData) {
+      const params = new URLSearchParams(postData);
+      let inputs = '';
+      params.forEach((value, key) => {
+        inputs += `<input type="hidden" name="${escapeAttr(key)}" value="${escapeAttr(value)}">`;
       });
+      win.document.write(
+        `<!doctype html><meta charset="utf-8"><title>Opening booking…</title>` +
+        `<body style="font:15px system-ui;padding:2rem">Opening booking…` +
+        `<form id="b" method="POST" action="${escapeAttr(url)}">${inputs}</form>` +
+        `<script>document.getElementById('b').submit();<\/script>`
+      );
+      win.document.close();
+    }
 
-      document.body.appendChild(form);
-      form.submit();
+    function showBookingLink(btn, href) {
+      const existing = btn.closest('.row-right').querySelector('.book-error');
+      if (existing) existing.remove();
+      const notice = document.createElement('div');
+      notice.className = 'book-error';
+      notice.innerHTML = `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">Open booking ↗</a>`;
+      btn.closest('.row-right').appendChild(notice);
     }
 
     results.addEventListener('click', async (e) => {
@@ -1379,28 +1394,35 @@
       btn.textContent = '…';
       btn.disabled = true;
 
+      // Open the tab now, synchronously, while we still have the click
+      // gesture -- otherwise the popup gets blocked after the await.
+      const bookingTab = window.open('about:blank', '_blank');
+
       try {
         const resp = await fetch(`/book/${encodeURIComponent(ctx.country)}?origin=${encodeURIComponent(ctx.origin)}&date=${encodeURIComponent(ctx.date)}&token=${encodeURIComponent(ctx.token)}`);
         const data = await resp.json();
 
         if (data.book_with) {
           btn.textContent = `Opening ${data.book_with}…`;
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 400));
         }
 
-        if (data.url && data.post_data) {
-          submitBookingForm(data.url, data.post_data);
+        const target = data.url || fallback;
+        if (!bookingTab) {
+          // popup blocked -- leave a link they can click themselves
+          showBookingLink(btn, target);
+        } else if (data.url && data.post_data) {
+          writeBookingForm(bookingTab, data.url, data.post_data);
         } else {
-          window.location.href = data.url || fallback;
+          bookingTab.opener = null;
+          bookingTab.location.replace(target);
         }
-        // navigating away now, no need to reset button state
       } catch (err) {
+        if (bookingTab) bookingTab.close();
+        showBookingLink(btn, fallback);
+      } finally {
         btn.textContent = originalText;
         btn.disabled = false;
-        const notice = document.createElement('div');
-        notice.className = 'book-error';
-        notice.innerHTML = `Couldn't reach booking — <a href="${fallback}" target="_blank" rel="noopener noreferrer">try Google Flights instead</a>`;
-        btn.closest('.row-right').appendChild(notice);
       }
     });
 
