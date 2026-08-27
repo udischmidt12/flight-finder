@@ -3,4 +3,15 @@ __pycache__/
 *.pyc
 config.json
 expenses.json
+
+# Secrets — every .env variant (.env, .env.local, .env.bak, ...)
 .env
+.env.*
+*.env
+
+# Common credential file shapes, so an auto-commit can never sweep them up
+*.pem
+*.key
+id_rsa*
+secrets.json
+service-account*.json
