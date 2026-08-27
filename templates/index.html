@@ -487,6 +487,19 @@
   .book-btn:active { transform: translateY(1px) scale(0.97); box-shadow: var(--clay-in); }
   .book-btn:focus-visible { outline: 3px solid var(--accent-press); outline-offset: 3px; }
 
+  .book-link-box {
+    margin-top: 0.45rem;
+    max-width: 190px;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    line-height: 1.35;
+    color: var(--muted);
+    text-align: right;
+    word-break: break-all;
+    user-select: all;
+    -webkit-user-select: all;
+  }
+
   .empty, .loading {
     font-size: 0.92rem;
     font-weight: 600;
@@ -1048,6 +1061,13 @@
     const ORIGIN_REGIONS = {{ origin_regions|tojson }};
     const REGION_LABELS = {{ region_labels|tojson }};
 
+    // The Claude desktop app hosts pages in an embedded Chromium whose UA
+    // carries "Claude/<version>". Sending that webview to a heavyweight
+    // external site (Google Flights, Skyscanner) has crashed the whole
+    // desktop app. When we detect it, "Book" copies the link instead of
+    // navigating anywhere. Normal browsers get a real link.
+    const IN_CLAUDE_DESKTOP = /\bClaude\/\d/.test(navigator.userAgent || '');
+
     const originCarousel = document.getElementById('origin-carousel');
     const originStatus = document.getElementById('origin-status');
     const results = document.getElementById('results');
@@ -1252,9 +1272,7 @@
       return '';
     }
 
-    // Where "Book" points. A plain https link the browser opens in a new
-    // tab -- no popups, no navigation of this app, nothing that can wedge
-    // an embedded webview. Skyscanner-sourced fares go to Skyscanner's
+    // Where "Book" points. Skyscanner-sourced fares go to Skyscanner's
     // results page, everything else to Google Flights.
     function bookHref(source, originCode, destCode, dateISO) {
       const o = String(originCode || '').toLowerCase();
@@ -1265,6 +1283,81 @@
       }
       const q = encodeURIComponent(`Flights from ${originCode} to ${destCode} on ${dateISO}`);
       return `https://www.google.com/travel/flights?q=${q}`;
+    }
+
+    // The "Book" control. In a normal browser it's a plain new-tab link.
+    // Inside the Claude desktop app it's a button that copies the link --
+    // no navigation, because that path can crash the host app.
+    function bookControl(source, originCode, destCode, dateISO) {
+      const href = bookHref(source, originCode, destCode, dateISO);
+      if (IN_CLAUDE_DESKTOP) {
+        return `<button class="book-btn" type="button" data-book-url="${encodeURIComponent(href)}">Copy link</button>`;
+      }
+      return `<a class="book-btn" href="${href}" target="_blank" rel="noopener noreferrer">Book</a>`;
+    }
+
+    // Copy-link handler (only ever fires for the Claude-desktop variant).
+    // Pure clipboard + DOM text -- nothing that navigates.
+    results.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.book-btn[data-book-url]');
+      if (!btn) return;
+      e.preventDefault();
+      const url = decodeURIComponent(btn.dataset.bookUrl);
+
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      } catch (_) { copied = false; }
+
+      const rowRight = btn.closest('.row-right');
+      let box = rowRight.querySelector('.book-link-box');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'book-link-box';
+        rowRight.appendChild(box);
+      }
+      box.textContent = url;
+      btn.textContent = copied ? 'Copied ✓' : 'Copy link';
+
+      // Select the text too, so a manual Ctrl+C works if the API was blocked.
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(box);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (_) {}
+    });
+
+    // Export CSV: a file download from the Claude desktop webview can
+    // misbehave too, so there we fetch the CSV and show it for copy
+    // instead of letting the <a> trigger a download.
+    const exportLink = document.getElementById('export-expenses-link');
+    if (exportLink && IN_CLAUDE_DESKTOP) {
+      exportLink.addEventListener('click', async (e) => {
+        e.preventDefault();
+        let text;
+        try {
+          const resp = await fetch('/api/expenses/export');
+          text = await resp.text();
+        } catch (err) {
+          text = 'Could not load export: ' + err.message;
+        }
+        let ta = document.getElementById('export-csv-dump');
+        if (!ta) {
+          ta = document.createElement('textarea');
+          ta.id = 'export-csv-dump';
+          ta.readOnly = true;
+          ta.rows = 8;
+          ta.style.cssText = 'width:100%;margin-top:0.75rem;font-family:var(--font-mono);font-size:0.7rem;padding:0.6rem;border-radius:12px;border:none;box-shadow:var(--clay-in);background:var(--bg);color:var(--ink);resize:vertical';
+          exportLink.after(ta);
+        }
+        ta.value = text;
+        ta.focus();
+        ta.select();
+        try { await navigator.clipboard.writeText(text); } catch (_) {}
+      });
     }
 
     function renderLoading(country) {
@@ -1327,7 +1420,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                <a class="book-btn" href="${bookHref(r.source, data.origin, data.airport, r.date)}" target="_blank" rel="noopener noreferrer">Book</a>
+                ${bookControl(r.source, data.origin, data.airport, r.date)}
               </div>
             </div>
           </div>
@@ -1451,7 +1544,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                <a class="book-btn" href="${bookHref(r.source, r.origin, r.airport, r.date)}" target="_blank" rel="noopener noreferrer">Book</a>
+                ${bookControl(r.source, r.origin, r.airport, r.date)}
               </div>
             </div>
           </div>
