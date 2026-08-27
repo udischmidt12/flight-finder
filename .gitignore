@@ -4,6 +4,7 @@ __pycache__/
 config.json
 expenses.json
 skyscanner_airports.json
+prearrival_cache.json
 
 # Secrets — every .env variant (.env, .env.local, .env.bak, ...)
 .env

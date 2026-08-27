@@ -610,6 +610,74 @@
     padding: 0.3rem;
   }
 
+  .prearrival-body {
+    overflow-y: auto;
+    margin-bottom: 1.1rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+
+  .prearrival-body ul { list-style: none; margin: 0; padding: 0; }
+  .prearrival-body > ul > li {
+    position: relative;
+    padding: 0.55rem 0 0.55rem 1.1rem;
+    border-bottom: 1px solid var(--faint);
+  }
+  .prearrival-body > ul > li:last-child { border-bottom: none; }
+  .prearrival-body > ul > li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.95rem;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .prearrival-body ul ul { margin: 0.3rem 0 0; }
+  .prearrival-body ul ul li {
+    position: relative;
+    padding: 0.2rem 0 0.2rem 0.9rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .prearrival-body ul ul li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+  .prearrival-body strong { color: var(--accent-press); font-weight: 800; }
+  .prearrival-body .prearrival-sources {
+    margin-top: 0.9rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--muted);
+    word-break: break-word;
+  }
+  .prearrival-body .prearrival-loading,
+  .prearrival-body .prearrival-error {
+    padding: 0.6rem 0.2rem;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .prearrival-body .prearrival-error { color: var(--coral); }
+
+  .prearrival-refresh {
+    background: none;
+    border: none;
+    color: var(--accent-press);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 0.9rem;
+  }
+
   .modal-option {
     display: flex;
     align-items: center;
@@ -1094,6 +1162,15 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="prearrival-modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="prearrival-title">
+      <p class="modal-title" id="prearrival-title">Before you go</p>
+      <p class="modal-sub" id="prearrival-sub"></p>
+      <div class="prearrival-body" id="prearrival-body"></div>
+      <button class="modal-cancel" id="prearrival-close" type="button">Close</button>
+    </div>
+  </div>
+
   <script>
     const defaultAirport = {{ home_airport|tojson }};
     const windowDays = {{ window_days|tojson }};
@@ -1227,6 +1304,104 @@
 
     document.getElementById('modal-cancel').addEventListener('click', closeModal);
     airportModal.addEventListener('click', (e) => { if (e.target === airportModal) closeModal(); });
+
+    // --- Pre-arrival info modal (visa / arrival forms / entry essentials) ---
+    const preArrivalModal = document.getElementById('prearrival-modal');
+    const preArrivalTitle = document.getElementById('prearrival-title');
+    const preArrivalSub = document.getElementById('prearrival-sub');
+    const preArrivalBody = document.getElementById('prearrival-body');
+    const preArrivalCache = new Map();  // country -> rendered {text, cached, fetched_at}
+
+    function escHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    // Minimal renderer for the "- " / "  - " bullet text Claude returns.
+    function renderPreArrival(text) {
+      const inline = s => escHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      let out = '';
+      let topOpen = false, subOpen = false, sources = '';
+
+      const closeTop = () => {
+        if (subOpen) { out += '</ul>'; subOpen = false; }
+        if (topOpen) { out += '</li>'; topOpen = false; }
+      };
+
+      for (const raw of text.split('\n')) {
+        const line = raw.replace(/\s+$/, '');
+        if (!line.trim()) continue;
+
+        const src = line.match(/^\s*sources?\s*:\s*(.+)$/i);
+        if (src) { sources = src[1]; continue; }
+
+        const sub = line.match(/^\s{2,}[-*•]\s+(.*)$/);
+        const top = line.match(/^\s*[-*•]\s+(.*)$/);
+
+        if (sub && topOpen) {
+          if (!subOpen) { out += '<ul>'; subOpen = true; }
+          out += `<li>${inline(sub[1])}</li>`;
+        } else if (top || sub) {
+          closeTop();
+          out += `<li>${inline((top || sub)[1])}`;
+          topOpen = true;
+        } else {
+          closeTop();
+          out += `<li>${inline(line.trim())}`;
+          topOpen = true;
+        }
+      }
+      closeTop();
+
+      let html = out ? `<ul>${out}</ul>` : '';
+      if (sources) html += `<p class="prearrival-sources">Sources: ${escHtml(sources)}</p>`;
+      return html || `<p class="prearrival-error">Nothing came back — try refreshing.</p>`;
+    }
+
+    function closePreArrival() { preArrivalModal.hidden = true; }
+    document.getElementById('prearrival-close').addEventListener('click', closePreArrival);
+    preArrivalModal.addEventListener('click', (e) => { if (e.target === preArrivalModal) closePreArrival(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !preArrivalModal.hidden) closePreArrival();
+    });
+
+    async function openPreArrival(country, force) {
+      preArrivalTitle.textContent = `Before you go — ${country}`;
+      preArrivalSub.textContent = 'Visa, arrival forms and entry essentials.';
+      preArrivalModal.hidden = false;
+
+      const cached = !force && preArrivalCache.get(country);
+      if (cached) {
+        paintPreArrival(country, cached);
+        return;
+      }
+
+      preArrivalBody.innerHTML =
+        `<p class="prearrival-loading">Checking current entry requirements for ${escHtml(country)}…</p>`;
+      try {
+        const url = `/api/prearrival/${encodeURIComponent(country)}${force ? '?refresh=1' : ''}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'lookup failed');
+        preArrivalCache.set(country, data);
+        paintPreArrival(country, data);
+      } catch (err) {
+        preArrivalBody.innerHTML =
+          `<p class="prearrival-error">Couldn't load it: ${escHtml(err.message)}</p>`;
+      }
+    }
+
+    function paintPreArrival(country, data) {
+      const when = data.fetched_at
+        ? new Date(data.fetched_at * 1000).toLocaleDateString()
+        : '';
+      preArrivalBody.innerHTML =
+        `<button class="prearrival-refresh" type="button" data-country="${escHtml(country)}">↻ Refresh${when ? ` (checked ${escHtml(when)})` : ''}</button>` +
+        renderPreArrival(data.text || '');
+      const btn = preArrivalBody.querySelector('.prearrival-refresh');
+      if (btn) btn.addEventListener('click', () => openPreArrival(country, true));
+    }
 
     originCarousel.querySelectorAll('.chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -1553,6 +1728,7 @@
 
         filterToDestination(tile);
         runSearch(country);
+        openPreArrival(country);
       });
     });
 

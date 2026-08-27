@@ -19,6 +19,7 @@ from countries import all_countries, origin_regions, REGION_LABELS
 from flights import search_cheapest_flight, FlightApiError
 import skyscanner
 import receipts
+import prearrival
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
 
 app = Flask(__name__)
@@ -319,6 +320,27 @@ def scan_receipt():
         return jsonify({"error": str(e)}), 502
 
     return jsonify(result)
+
+
+@app.route("/api/prearrival/<country>")
+@require_auth
+def prearrival_info(country):
+    """Current visa / arrival-form / entry essentials for a destination,
+    from Claude + web search. Cached ~2 weeks server-side; ?refresh=1
+    forces a re-fetch."""
+    if country not in all_countries():
+        return jsonify({"error": f"unknown country: {country}"}), 404
+
+    config = load_config() or {}
+    passport = config.get("passport") or "Israel"
+    force = request.args.get("refresh") == "1"
+
+    try:
+        data = prearrival.get(country, passport, force=force)
+    except prearrival.PreArrivalError as e:
+        return jsonify({"error": str(e)}), 502
+
+    return jsonify({"country": country, "passport": passport, **data})
 
 
 if __name__ == "__main__":
