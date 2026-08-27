@@ -1273,17 +1273,24 @@
     }
 
     // Where "Book" points: Skyscanner's results page for this exact route
-    // and date, one-way, 1 adult. That page lists every flight for the
-    // trip with prices and a "Select" button that goes straight to the
-    // airline or agent -- not a general search box.
+    // and date, one-way, 1 adult, with the same "direct only" filter the
+    // search used. That page lists every flight for the trip with a
+    // "Select" button straight to the airline or agent -- not a search
+    // box. Skyscanner is a different meta-search from Google, so the
+    // exact flights/prices won't always line up, but the route, date and
+    // stops filter will.
     function bookHref(originCode, destCode, dateISO) {
       const o = String(originCode || '').toLowerCase();
       const d = String(destCode || '').toLowerCase();
       const m = /^\d{4}-\d{2}-\d{2}$/.test(dateISO || '');
       if (o && d && m) {
         const ymd = dateISO.slice(2).replace(/-/g, '');  // YYYY-MM-DD -> YYMMDD
-        return `https://www.skyscanner.net/transport/flights/${o}/${d}/${ymd}/` +
-               `?adultsv2=1&rtn=0&preferdirects=false`;
+        const qs = new URLSearchParams({
+          adultsv2: '1',
+          rtn: '0',
+          preferdirects: directOnly ? 'true' : 'false',
+        });
+        return `https://www.skyscanner.net/transport/flights/${o}/${d}/${ymd}/?${qs}`;
       }
       return `https://www.skyscanner.net/routes/${o}/${d}/`;  // no date -> route page
     }
