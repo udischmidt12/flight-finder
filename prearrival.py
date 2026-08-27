@@ -14,12 +14,16 @@ import time
 
 import anthropic
 
-MODEL = "claude-opus-5"
+# Haiku keeps a lookup at a few cents. Bump to "claude-sonnet-5" or
+# "claude-opus-5" here if you want higher-confidence visa research.
+MODEL = "claude-haiku-4-5"
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "prearrival_cache.json")
 TTL_SECONDS = 14 * 24 * 3600  # re-fetch after two weeks
 
-_WS_PRIMARY = {"type": "web_search_20260209", "name": "web_search", "max_uses": 6}
-_WS_FALLBACK = {"type": "web_search_20250305", "name": "web_search", "max_uses": 6}
+# Basic web search -- works on every model tier including Haiku. max_uses
+# caps the search rounds; each round re-processes fetched page text, so
+# it's the main cost lever.
+_WS = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
 
 _cache_lock = threading.Lock()
 
@@ -127,19 +131,10 @@ def _call(country, passport):
     kwargs = dict(
         model=MODEL,
         max_tokens=1800,
-        output_config={"effort": "medium"},
         messages=[{"role": "user", "content": _prompt(country, passport)}],
     )
     try:
-        try:
-            resp = client.messages.create(tools=[_WS_PRIMARY], **kwargs)
-        except anthropic.BadRequestError as e:
-            msg = str(getattr(e, "message", "") or e).lower()
-            # only retry the older tool variant if the tool type was the problem
-            if "web_search" in msg or "unsupported tool" in msg or "tool type" in msg:
-                resp = client.messages.create(tools=[_WS_FALLBACK], **kwargs)
-            else:
-                raise
+        resp = client.messages.create(tools=[_WS], **kwargs)
     except anthropic.AuthenticationError:
         raise PreArrivalError("ANTHROPIC_API_KEY is invalid")
     except anthropic.RateLimitError:

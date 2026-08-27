@@ -11,7 +11,9 @@ import re
 
 import anthropic
 
-MODEL = "claude-opus-5"
+# Haiku reads a receipt fine and keeps a scan well under a cent. Bump to
+# "claude-sonnet-5" if you hit misreads on messy receipts.
+MODEL = "claude-haiku-4-5"
 MAX_FILE_BYTES = 8 * 1024 * 1024  # 8 MB
 
 PDF_TYPE = "application/pdf"
@@ -126,7 +128,6 @@ def scan(file_bytes, content_type):
         resp = client.messages.create(
             model=MODEL,
             max_tokens=512,
-            output_config={"effort": "low"},
             messages=[{"role": "user",
                        "content": [block, {"type": "text", "text": _PROMPT}]}],
         )
