@@ -44,11 +44,28 @@ class ReceiptError(Exception):
     """Config / size / type / API problem -- surfaced to the user."""
 
 
+def _clean_bad_request(msg):
+    m = (msg or "").strip()
+    low = m.lower()
+    if "credit balance is too low" in low:
+        return ("Anthropic account has no API credit -- add credits at "
+                "console.anthropic.com (Plans & Billing).")
+    if "workspace" in low and "identity-linked" in low:
+        return ("This ANTHROPIC_API_KEY is identity-linked -- add "
+                "ANTHROPIC_WORKSPACE_ID=... to .env (console.anthropic.com -> "
+                "Settings -> Workspaces), or make a standard API key instead.")
+    return m[:200] or "bad request to the Claude API"
+
+
 def _client():
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise ReceiptError("ANTHROPIC_API_KEY is not set")
-    return anthropic.Anthropic(api_key=key)
+    kwargs = {"api_key": key}
+    ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+    if ws:  # identity-linked keys require the workspace id on every request
+        kwargs["default_headers"] = {"anthropic-workspace-id": ws}
+    return anthropic.Anthropic(**kwargs)
 
 
 def _source_block(file_bytes, content_type):
@@ -118,11 +135,7 @@ def scan(file_bytes, content_type):
     except anthropic.RateLimitError:
         raise ReceiptError("Claude API rate limit hit -- try again shortly")
     except anthropic.BadRequestError as e:
-        m = str(getattr(e, "message", "") or e)
-        if "credit balance is too low" in m.lower():
-            raise ReceiptError("Anthropic account has no API credit -- add credits "
-                               "at console.anthropic.com (Plans & Billing).")
-        raise ReceiptError(m[:200] or "bad request to the Claude API")
+        raise ReceiptError(_clean_bad_request(str(getattr(e, "message", "") or e)))
     except anthropic.APIStatusError as e:
         raise ReceiptError(f"Claude API error ({e.status_code})")
     except anthropic.APIConnectionError:

@@ -32,7 +32,11 @@ def _client():
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise PreArrivalError("ANTHROPIC_API_KEY is not set")
-    return anthropic.Anthropic(api_key=key)
+    kwargs = {"api_key": key}
+    ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+    if ws:  # identity-linked keys require the workspace id on every request
+        kwargs["default_headers"] = {"anthropic-workspace-id": ws}
+    return anthropic.Anthropic(**kwargs)
 
 
 def _prompt(country, passport):
@@ -68,9 +72,14 @@ def _extract_text(resp):
 
 def _clean_bad_request(msg):
     m = (msg or "").strip()
-    if "credit balance is too low" in m.lower():
+    low = m.lower()
+    if "credit balance is too low" in low:
         return ("Anthropic account has no API credit -- add credits at "
                 "console.anthropic.com (Plans & Billing).")
+    if "workspace" in low and "identity-linked" in low:
+        return ("This ANTHROPIC_API_KEY is identity-linked -- add "
+                "ANTHROPIC_WORKSPACE_ID=... to .env (console.anthropic.com -> "
+                "Settings -> Workspaces), or make a standard API key instead.")
     return m[:200] or "bad request to the Claude API"
 
 
