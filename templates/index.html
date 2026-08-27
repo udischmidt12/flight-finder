@@ -1295,31 +1295,41 @@
       return `https://www.skyscanner.net/routes/${o}/${d}/`;  // no date -> route page
     }
 
-    // The "Book" control. In a normal browser it's a plain new-tab link.
-    // Inside the Claude desktop app it's a button that copies the link --
-    // no navigation, because that path can crash the host app.
-    function bookControl(originCode, destCode, dateISO) {
-      const href = bookHref(originCode, destCode, dateISO);
-      if (IN_CLAUDE_DESKTOP) {
-        return `<button class="book-btn" type="button" data-book-url="${encodeURIComponent(href)}">Copy link</button>`;
-      }
-      return `<a class="book-btn" href="${href}" target="_blank" rel="noopener noreferrer">Book</a>`;
+    function escAttr(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
     }
 
-    // Copy-link handler (only ever fires for the Claude-desktop variant).
-    // Pure clipboard + DOM text -- nothing that navigates.
-    results.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.book-btn[data-book-url]');
-      if (!btn) return;
-      e.preventDefault();
-      const url = decodeURIComponent(btn.dataset.bookUrl);
+    // The "Book" control -- always a button, because clicking it may need
+    // an async lookup (/book) for the specific seller's link.
+    function bookControl(originCode, destCode, dateISO, token) {
+      return `<button class="book-btn" type="button"` +
+        ` data-o="${escAttr(originCode)}" data-d="${escAttr(destCode)}"` +
+        ` data-date="${escAttr(dateISO)}"` +
+        ` data-token="${token ? encodeURIComponent(token) : ''}">Book</button>`;
+    }
 
-      let copied = false;
-      try {
-        await navigator.clipboard.writeText(url);
-        copied = true;
-      } catch (_) { copied = false; }
+    // Cache /book results so a double-click doesn't spend a second SerpApi search.
+    const bookCache = new Map();
 
+    // Write a self-submitting POST form into an already-open tab (Google's
+    // booking redirect is a POST). Only used in a normal browser.
+    function writePostForm(win, url, postData) {
+      let inputs = '';
+      new URLSearchParams(postData).forEach((value, key) => {
+        inputs += `<input type="hidden" name="${escAttr(key)}" value="${escAttr(value)}">`;
+      });
+      win.document.write(
+        `<!doctype html><meta charset="utf-8"><title>Opening booking…</title>` +
+        `<body style="font:15px system-ui;padding:2rem">Opening booking…` +
+        `<form id="b" method="POST" action="${escAttr(url)}">${inputs}</form>` +
+        `<script>document.getElementById('b').submit();<\/script>`
+      );
+      win.document.close();
+    }
+
+    function showBookBox(btn, url, agent) {
       const rowRight = btn.closest('.row-right');
       let box = rowRight.querySelector('.book-link-box');
       if (!box) {
@@ -1327,10 +1337,7 @@
         box.className = 'book-link-box';
         rowRight.appendChild(box);
       }
-      box.textContent = url;
-      btn.textContent = copied ? 'Copied ✓' : 'Copy link';
-
-      // Select the text too, so a manual Ctrl+C works if the API was blocked.
+      box.textContent = (agent ? agent + ': ' : '') + url;
       try {
         const range = document.createRange();
         range.selectNodeContents(box);
@@ -1338,6 +1345,57 @@
         sel.removeAllRanges();
         sel.addRange(range);
       } catch (_) {}
+    }
+
+    // Book click: if this fare has a Google/SerpApi booking_token, ask
+    // /book for the seller's link and go straight there (airline or OTA,
+    // flight preselected). Otherwise open the Skyscanner page for the
+    // route/date. Inside the Claude desktop app nothing navigates -- it
+    // copies the best URL instead.
+    results.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.book-btn');
+      if (!btn) return;
+      e.preventDefault();
+
+      const o = btn.dataset.o, d = btn.dataset.d, date = btn.dataset.date;
+      const token = btn.dataset.token ? decodeURIComponent(btn.dataset.token) : '';
+      const skyUrl = bookHref(o, d, date);
+
+      // Grab a tab now (normal browser only) while the click is still "fresh".
+      const tab = IN_CLAUDE_DESKTOP ? null : window.open('about:blank', '_blank');
+      btn.textContent = '…';
+
+      let url = skyUrl, post = null, agent = null;
+      if (token) {
+        try {
+          let data = bookCache.get(token);
+          if (!data) {
+            const qs = new URLSearchParams({ origin: o, dest: d, date, token });
+            data = await (await fetch('/book?' + qs)).json();
+            bookCache.set(token, data);
+          }
+          if (data && data.url) { url = data.url; post = data.post_data || null; agent = data.book_with || null; }
+        } catch (_) { /* fall back to skyUrl */ }
+      }
+
+      if (IN_CLAUDE_DESKTOP) {
+        const copyUrl = post ? skyUrl : url;  // a POST url is useless pasted into a bar
+        let copied = false;
+        try { await navigator.clipboard.writeText(copyUrl); copied = true; } catch (_) {}
+        showBookBox(btn, copyUrl, post ? null : agent);
+        btn.textContent = copied ? 'Copied ✓' : 'Copy link';
+        return;
+      }
+
+      try {
+        if (post) writePostForm(tab, url, post);
+        else if (tab) { tab.opener = null; tab.location.replace(url); }
+        else window.open(url, '_blank', 'noopener,noreferrer');
+      } catch (_) {
+        if (tab) { try { tab.close(); } catch (_) {} }
+        window.open(skyUrl, '_blank', 'noopener,noreferrer');
+      }
+      btn.textContent = 'Book';
     });
 
     // Export CSV: a file download from the Claude desktop webview can
@@ -1430,7 +1488,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                ${bookControl(data.origin, data.airport, r.date)}
+                ${bookControl(data.origin, data.airport, r.date, r.booking_token)}
               </div>
             </div>
           </div>
@@ -1554,7 +1612,7 @@
               </div>
               <div class="row-right">
                 <div class="price">$${r.price ?? '?'}</div>
-                ${bookControl(r.origin, r.airport, r.date)}
+                ${bookControl(r.origin, r.airport, r.date, r.booking_token)}
               </div>
             </div>
           </div>
