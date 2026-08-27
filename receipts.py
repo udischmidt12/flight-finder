@@ -117,6 +117,12 @@ def scan(file_bytes, content_type):
         raise ReceiptError("ANTHROPIC_API_KEY is invalid")
     except anthropic.RateLimitError:
         raise ReceiptError("Claude API rate limit hit -- try again shortly")
+    except anthropic.BadRequestError as e:
+        m = str(getattr(e, "message", "") or e)
+        if "credit balance is too low" in m.lower():
+            raise ReceiptError("Anthropic account has no API credit -- add credits "
+                               "at console.anthropic.com (Plans & Billing).")
+        raise ReceiptError(m[:200] or "bad request to the Claude API")
     except anthropic.APIStatusError as e:
         raise ReceiptError(f"Claude API error ({e.status_code})")
     except anthropic.APIConnectionError:

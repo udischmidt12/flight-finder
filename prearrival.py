@@ -66,6 +66,14 @@ def _extract_text(resp):
     return "\n".join(p.strip() for p in parts if p and p.strip()).strip()
 
 
+def _clean_bad_request(msg):
+    m = (msg or "").strip()
+    if "credit balance is too low" in m.lower():
+        return ("Anthropic account has no API credit -- add credits at "
+                "console.anthropic.com (Plans & Billing).")
+    return m[:200] or "bad request to the Claude API"
+
+
 def _call(country, passport):
     client = _client()
     kwargs = dict(
@@ -75,13 +83,21 @@ def _call(country, passport):
         messages=[{"role": "user", "content": _prompt(country, passport)}],
     )
     try:
-        resp = client.messages.create(tools=[_WS_PRIMARY], **kwargs)
-    except anthropic.BadRequestError:
-        resp = client.messages.create(tools=[_WS_FALLBACK], **kwargs)
+        try:
+            resp = client.messages.create(tools=[_WS_PRIMARY], **kwargs)
+        except anthropic.BadRequestError as e:
+            msg = str(getattr(e, "message", "") or e).lower()
+            # only retry the older tool variant if the tool type was the problem
+            if "web_search" in msg or "unsupported tool" in msg or "tool type" in msg:
+                resp = client.messages.create(tools=[_WS_FALLBACK], **kwargs)
+            else:
+                raise
     except anthropic.AuthenticationError:
         raise PreArrivalError("ANTHROPIC_API_KEY is invalid")
     except anthropic.RateLimitError:
         raise PreArrivalError("Claude API rate limit hit -- try again shortly")
+    except anthropic.BadRequestError as e:
+        raise PreArrivalError(_clean_bad_request(str(getattr(e, "message", "") or e)))
     except anthropic.APIStatusError as e:
         raise PreArrivalError(f"Claude API error ({e.status_code})")
     except anthropic.APIConnectionError:
