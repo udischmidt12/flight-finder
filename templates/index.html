@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#E7E3F3">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 <title>Cheapest Flight Finder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -80,6 +81,23 @@
     background: radial-gradient(ellipse at 50% 0%, var(--bg-bloom) 0%, transparent 72%);
     z-index: -1;
     pointer-events: none;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 0 0 0.6rem;
+  }
+
+  .title-row h1 { margin: 0; flex: 1; min-width: 0; }
+
+  .title-logo {
+    flex: 0 0 auto;
+    width: clamp(64px, 24vw, 104px);
+    height: auto;
+    display: block;
+    filter: drop-shadow(7px 9px 14px var(--umbra-soft));
   }
 
   h1 {
@@ -911,7 +929,11 @@
 </style>
 </head>
 <body>
-  <h1>Find your next flight</h1>
+  <div class="title-row">
+    <h1>Find your next flight</h1>
+    <img class="title-logo" src="{{ url_for('static', filename='logo.png') }}" alt=""
+         onerror="this.style.display='none'">
+  </div>
   <p class="tagline">Pick where you're flying from, tap where you want to go, and we'll check {{ 'tomorrow' if window_days == 1 else 'the next ' ~ window_days ~ ' days' }} for the best fare.</p>
 
   <div class="tab-bar" role="tablist">
