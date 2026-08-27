@@ -1250,6 +1250,14 @@
       return parts.length > 1 ? parts[1] : dateTimeStr;
     }
 
+    // Which engine this fare came from (we query Google Flights and
+    // Skyscanner and keep the cheaper one).
+    function sourceLabel(source) {
+      if (source === 'skyscanner') return ' · via Skyscanner';
+      if (source === 'google') return ' · via Google Flights';
+      return '';
+    }
+
     function bookingUrl(originCode, destCode, date) {
       const q = encodeURIComponent(`Flights from ${originCode} to ${destCode} on ${date}`);
       return `https://www.google.com/travel/flights?q=${q}`;
@@ -1322,7 +1330,7 @@
             <div class="row-main">
               <div>
                 <div class="date">${r.day_of_week}, ${r.date}${isBest ? '<span class="badge">Best price</span>' : ''}</div>
-                <div class="meta">${r.airline} · ${timeOnly(r.departure)} → ${timeOnly(r.arrival)}${r.total_duration_minutes ? ' (' + formatDuration(r.total_duration_minutes) + ')' : ''}</div>
+                <div class="meta">${r.airline} · ${timeOnly(r.departure)} → ${timeOnly(r.arrival)}${r.total_duration_minutes ? ' (' + formatDuration(r.total_duration_minutes) + ')' : ''}${sourceLabel(r.source)}</div>
                 ${flightTag}
               </div>
               <div class="row-right">
@@ -1509,7 +1517,7 @@
                 ${flag}
                 <div>
                   <div class="date">${r.country}${isBest ? '<span class="badge">Cheapest</span>' : ''}</div>
-                  <div class="meta">${r.day_of_week}, ${r.date} · ${r.airline}</div>
+                  <div class="meta">${r.day_of_week}, ${r.date} · ${r.airline}${sourceLabel(r.source)}</div>
                   ${flightTag}
                 </div>
               </div>

@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 config.json
 expenses.json
+skyscanner_airports.json
 
 # Secrets — every .env variant (.env, .env.local, .env.bak, ...)
 .env

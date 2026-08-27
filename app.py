@@ -17,6 +17,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from countries import candidate_countries, all_countries, origin_regions, REGION_LABELS
 from flights import search_cheapest_flight, get_booking_url, FlightApiError
+import skyscanner
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
 
 app = Flask(__name__)
@@ -139,15 +140,31 @@ def search_country(country):
     results = []
     skipped_dates = []
     for d in dates:
+        candidates = []
+
+        # Google Flights (SerpApi) -- still authoritative for hard errors
+        # like a missing API key.
         try:
-            flight = search_cheapest_flight(origin, airport, d, direct_only=direct_only)
+            g = search_cheapest_flight(origin, airport, d, direct_only=direct_only)
         except FlightApiError as e:
             return jsonify({"error": str(e)}), 500
+        if g and g.get("price") is not None:
+            g.setdefault("source", "google")
+            candidates.append(g)
 
-        if flight is None:
+        # Skyscanner (RapidAPI) -- best-effort supplement, never fatal.
+        try:
+            s = skyscanner.search_cheapest_flight(origin, airport, d, direct_only=direct_only)
+        except skyscanner.SkyscannerError:
+            s = None
+        if s and s.get("price") is not None:
+            candidates.append(s)
+
+        if not candidates:
             skipped_dates.append(d)
             continue
 
+        flight = min(candidates, key=lambda c: c["price"])
         results.append({
             "date": d,
             "day_of_week": date.fromisoformat(d).strftime("%A"),
@@ -158,7 +175,8 @@ def search_country(country):
             "is_direct": flight["is_direct"],
             "layovers": flight["layovers"],
             "total_duration_minutes": flight["total_duration_minutes"],
-            "booking_token": flight["booking_token"],
+            "booking_token": flight.get("booking_token"),
+            "source": flight.get("source", "google"),
         })
 
     results.sort(key=lambda r: r["price"] if r["price"] is not None else float("inf"))
