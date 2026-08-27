@@ -15,7 +15,7 @@ from flask import Flask, render_template, request, jsonify, Response
 # absent, so this is safe on PythonAnywhere where the vars are set for real.
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from countries import candidate_countries, all_countries, origin_regions, REGION_LABELS
+from countries import all_countries, origin_regions, REGION_LABELS
 from flights import search_cheapest_flight, FlightApiError
 import skyscanner
 from expenses import load_expenses, add_expense, update_expense, delete_expense, summarize, CATEGORIES
@@ -54,20 +54,23 @@ def require_auth(f):
 DESTINATION_SECTION_ORDER = ["asia", "south_america"]
 
 
-def group_wishlist_by_region(wishlist):
-    """{"Asia": {country: info, ...}, "South America": {...}} -- only
-    regions that actually have wishlist entries are included, in a fixed
-    order (Asia before South America)."""
-    sections = {}
-    for country, info in wishlist.items():
-        region = info.get("region")
-        sections.setdefault(region, {})[country] = info
-
-    return [
-        {"label": REGION_LABELS.get(region, region), "countries": sections[region]}
-        for region in DESTINATION_SECTION_ORDER
-        if region in sections
-    ]
+def destination_sections():
+    """Every destination country, grouped Asia then South America -- the
+    same country lists the origin picker offers. Each section:
+    {"key", "label", "countries": {name: info, ...}}."""
+    countries = all_countries()
+    regions = origin_regions()  # {"asia": [...names], "south_america": [...]}
+    sections = []
+    for key in DESTINATION_SECTION_ORDER:
+        names = sorted(regions.get(key) or [])
+        if not names:
+            continue
+        sections.append({
+            "key": key,
+            "label": REGION_LABELS.get(key, key),
+            "countries": {n: countries[n] for n in names},
+        })
+    return sections
 
 
 @app.route("/")
@@ -78,8 +81,7 @@ def index():
         return render_template(
             "index.html",
             error="config.json not found. Copy config.json.example to config.json and fill in your details.",
-            wishlist_sections=[],
-            unknown=[],
+            destination_sections=destination_sections(),
             origins=all_countries(),
             origin_regions=origin_regions(),
             region_labels=REGION_LABELS,
@@ -88,20 +90,14 @@ def index():
             expense_categories=CATEGORIES,
         )
 
-    home_airport = config.get("home_airport")
-    visited = config.get("visited_countries", [])
-    wishlist_countries = config.get("wishlist_countries")
-    wishlist, unknown = candidate_countries(visited, wishlist_countries)
-
     return render_template(
         "index.html",
         error=None,
-        wishlist_sections=group_wishlist_by_region(wishlist),
-        unknown=unknown,
+        destination_sections=destination_sections(),
         origins=all_countries(),
         origin_regions=origin_regions(),
         region_labels=REGION_LABELS,
-        home_airport=home_airport,
+        home_airport=config.get("home_airport"),
         window_days=SEARCH_WINDOW_DAYS,
         expense_categories=CATEGORIES,
     )
@@ -125,13 +121,9 @@ def search_country(country):
 
     direct_only = request.args.get("direct_only", "false").lower() == "true"
 
-    visited = config.get("visited_countries", [])
-    wishlist_countries = config.get("wishlist_countries")
-    wishlist, _ = candidate_countries(visited, wishlist_countries)
-
-    entry = wishlist.get(country)
+    entry = all_countries().get(country)
     if not entry:
-        return jsonify({"error": f"{country} is not in your wishlist"}), 404
+        return jsonify({"error": f"unknown country: {country}"}), 404
     airport = entry["airport"]
 
     today = date.today()

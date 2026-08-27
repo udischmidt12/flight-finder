@@ -216,6 +216,15 @@
   .compare-all-btn:active { box-shadow: var(--clay-in); transform: scale(0.97); }
   .compare-all-btn:disabled { opacity: 0.55; box-shadow: var(--clay-in); cursor: default; }
 
+  .region-toggle {
+    display: block;
+    margin: 0.25rem 0 1.5rem;
+  }
+  .region-toggle[aria-expanded="true"] {
+    background: var(--accent-soft);
+    box-shadow: var(--clay-in);
+  }
+
   /* Destination tiles — luggage tags, hole punched through the top */
   .tiles {
     display: grid;
@@ -945,8 +954,8 @@
         </div>
       </div>
 
-      {% for group in wishlist_sections %}
-      <div class="region-block">
+      {% for group in destination_sections %}
+      <div class="region-block" id="dest-region-{{ group.key }}"{% if group.key != 'asia' %} hidden{% endif %}>
         <p class="section-label">{{ group.label }}</p>
         <div class="tiles">
           {% for country, info in group.countries.items() %}
@@ -960,13 +969,7 @@
       </div>
       {% endfor %}
 
-      {% if unknown %}
-      <p class="notice">Not tracked yet — add to countries.py: {{ unknown|join(', ') }}</p>
-      {% endif %}
-
-      {% if not wishlist_sections %}
-      <p class="notice">Your wishlist is empty. Add countries to wishlist_countries in config.json.</p>
-      {% endif %}
+      <button class="compare-all-btn region-toggle" id="toggle-south-america" type="button">＋ South America</button>
 
       <div class="option-row">
         <label class="switch">
@@ -1460,9 +1463,29 @@
 
     const showAllBtn = document.getElementById('show-all-btn');
 
+    // South America is collapsed until the user opts in.
+    let saShown = false;
+    const saToggleBtn = document.getElementById('toggle-south-america');
+    const saBlock = document.getElementById('dest-region-south_america');
+
+    function applySAVisibility() {
+      if (saBlock) saBlock.hidden = !saShown;
+    }
+    if (saToggleBtn && saBlock) {
+      saToggleBtn.addEventListener('click', () => {
+        saShown = !saShown;
+        saToggleBtn.textContent = saShown ? '– South America' : '＋ South America';
+        saToggleBtn.setAttribute('aria-expanded', String(saShown));
+        applySAVisibility();
+      });
+    } else if (saToggleBtn) {
+      saToggleBtn.hidden = true;
+    }
+
     function showAllDestinations() {
       document.querySelectorAll('.tile').forEach(t => { t.hidden = false; });
       document.querySelectorAll('.region-block').forEach(b => { b.hidden = false; });
+      applySAVisibility();  // keep South America collapsed unless opted in
       if (activeTile) activeTile.setAttribute('aria-pressed', 'false');
       activeTile = null;
       showAllBtn.hidden = true;
@@ -1511,7 +1534,7 @@
 
       const head = `
         <div class="results-head">
-          <span class="results-title">Cheapest across your wishlist</span>
+          <span class="results-title">Cheapest across these destinations</span>
           <span class="results-scope">${list.length} CHECKED${directOnly ? ' · DIRECT ONLY' : ''}</span>
         </div>
       `;
@@ -1580,7 +1603,10 @@
       }
 
       compareAllBtn.addEventListener('click', async () => {
-        const countries = [...document.querySelectorAll('.tile')].map(t => t.dataset.country);
+        // Only the destinations currently on screen (South America counts
+        // only once it's been opened).
+        const countries = [...document.querySelectorAll('.region-block:not([hidden]) .tile')]
+          .map(t => t.dataset.country);
         if (countries.length === 0) return;
 
         if (!compareArmed) {
@@ -1602,7 +1628,7 @@
           results.hidden = false;
           results.innerHTML = `
             <div class="results-head">
-              <span class="results-title">Comparing your wishlist</span>
+              <span class="results-title">Comparing destinations</span>
               <span class="results-scope">${i + 1} / ${countries.length}</span>
             </div>
             <p class="loading">Checking ${country}…</p>

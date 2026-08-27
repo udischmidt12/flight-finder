@@ -7,7 +7,7 @@ Finds the cheapest flight from your home airport to one representative airport p
 ## Setup
 
 1. `pip install -r requirements.txt`
-2. `cp config.json.example config.json` and fill in `home_airport`, `visited_countries`, `wishlist_countries`.
+2. `cp config.json.example config.json` and set `home_airport`. "Flying to" offers every Asia country (and South America on a toggle) from `countries.py` — there's no wishlist to maintain.
 3. Provide API keys — either as real environment variables, or in a local `.env` file next to `app.py`:
 
    ```
