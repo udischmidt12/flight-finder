@@ -1,0 +1,26 @@
+# Fly.io config for flight-finder. `fly launch` may rename the app if
+# "flight-finder-udi" is taken — update this file to match if so.
+app = "flight-finder-udi"
+primary_region = "fra"
+
+[build]
+
+[env]
+  DATA_DIR = "/data"
+  HOME_AIRPORT = "TLV"
+  PASSPORT = "Israeli"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

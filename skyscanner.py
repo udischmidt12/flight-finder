@@ -27,7 +27,8 @@ import requests
 
 RAPIDAPI_HOST = "sky-scrapper.p.rapidapi.com"
 BASE_URL = f"https://{RAPIDAPI_HOST}"
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "skyscanner_airports.json")
+CACHE_PATH = os.path.join(
+    os.environ.get("DATA_DIR") or os.path.dirname(__file__), "skyscanner_airports.json")
 
 _cache_lock = threading.Lock()
 _breaker_until = 0.0  # skip live calls until this epoch time

@@ -1,4 +1,5 @@
 flask
 requests
 python-dotenv
-anthropic
+anthropic==1.1.0
+gunicorn

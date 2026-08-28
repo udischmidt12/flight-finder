@@ -17,7 +17,8 @@ import anthropic
 # Haiku keeps a lookup at a few cents. Bump to "claude-sonnet-5" or
 # "claude-opus-5" here if you want higher-confidence visa research.
 MODEL = "claude-haiku-4-5"
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "prearrival_cache.json")
+CACHE_PATH = os.path.join(
+    os.environ.get("DATA_DIR") or os.path.dirname(__file__), "prearrival_cache.json")
 TTL_SECONDS = 14 * 24 * 3600  # re-fetch after two weeks
 
 # Basic web search -- works on every model tier including Haiku. max_uses

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 
 # Load a local .env (SERPAPI_KEY, APP_ACCESS_TOKEN, ...) if present. Real
 # environment variables always win over .env values. No-op if the file is
@@ -16,7 +16,7 @@ from flask import Flask, render_template, request, jsonify, Response
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from countries import all_countries, origin_regions, REGION_LABELS
-from flights import search_cheapest_flight, FlightApiError
+from flights import search_flights, FlightApiError
 import skyscanner
 import receipts
 import prearrival
@@ -26,14 +26,21 @@ app = Flask(__name__)
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 SEARCH_WINDOW_DAYS = 1  # temporarily 1 to conserve SerpApi quota; was 7
+RESULT_LIMIT = 5        # flight options to return per search (no extra API calls)
 AIRPORT_CODE_RE = re.compile(r"^[A-Za-z]{3}$")
 
 
 def load_config():
-    if not os.path.exists(CONFIG_PATH):
-        return None
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """config.json if present (local dev), else HOME_AIRPORT / PASSPORT env
+    vars (production), else sensible defaults. Never None -- the app always
+    has somewhere to fly from."""
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "home_airport": os.environ.get("HOME_AIRPORT", "TLV"),
+        "passport": os.environ.get("PASSPORT", "Israeli"),
+    }
 
 
 def require_auth(f):
@@ -73,6 +80,46 @@ def destination_sections():
             "countries": {n: countries[n] for n in names},
         })
     return sections
+
+
+@app.after_request
+def _no_store_html(response):
+    """The page is a single template that changes often during development;
+    tell browsers never to serve a stale copy of the HTML."""
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+# --- PWA plumbing: served from the root so the service worker's scope is "/" ---
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(
+        _STATIC_DIR, "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    resp = send_from_directory(
+        _STATIC_DIR, "sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/.well-known/assetlinks.json")
+def assetlinks():
+    """Digital Asset Links -- lets the signed Android APK (a Trusted Web
+    Activity) open this site with no browser UI. Populated after the APK
+    is built; returns an empty list until then."""
+    path = os.path.join(_STATIC_DIR, "assetlinks.json")
+    if os.path.exists(path):
+        return send_from_directory(_STATIC_DIR, "assetlinks.json",
+                                   mimetype="application/json")
+    return jsonify([])
 
 
 @app.route("/")
@@ -126,16 +173,24 @@ def search_country(country):
     entry = all_countries().get(country)
     if not entry:
         return jsonify({"error": f"unknown country: {country}"}), 404
+
+    # Default to the country's primary airport; honour ?dest=<CODE> when it
+    # names another airport that actually belongs to this country.
     airport = entry["airport"]
+    dest = (request.args.get("dest") or "").upper()
+    if dest and AIRPORT_CODE_RE.match(dest):
+        by_code = {a["code"]: a for a in entry["airports"]}
+        if dest in by_code:
+            airport = dest
+    airport_city = next(
+        (a["city"] for a in entry["airports"] if a["code"] == airport), airport)
 
     today = date.today()
     dates = [(today + timedelta(days=i)).isoformat() for i in range(1, SEARCH_WINDOW_DAYS + 1)]
 
-    results = []
+    all_flights = []
     skipped_dates = []
     for d in dates:
-        candidates = []
-
         # Hit both engines at once so the search isn't the sum of two API
         # round-trips.
         def _skyscanner_leg():
@@ -147,18 +202,21 @@ def search_country(country):
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             g_future = pool.submit(
-                search_cheapest_flight, origin, airport, d, direct_only=direct_only)
+                search_flights, origin, airport, d,
+                direct_only=direct_only, limit=RESULT_LIMIT)
             s_future = pool.submit(_skyscanner_leg)
 
             # Google Flights (SerpApi) -- still authoritative for hard
             # errors like a missing API key.
             try:
-                g = g_future.result()
+                g_list = g_future.result()
             except FlightApiError as e:
                 return jsonify({"error": str(e)}), 500
             s = s_future.result()  # best-effort supplement, never fatal
 
-        if g and g.get("price") is not None:
+        day_of_week = date.fromisoformat(d).strftime("%A")
+        candidates = []
+        for g in g_list or []:
             g.setdefault("source", "google")
             candidates.append(g)
         if s and s.get("price") is not None:
@@ -168,28 +226,41 @@ def search_country(country):
             skipped_dates.append(d)
             continue
 
-        flight = min(candidates, key=lambda c: c["price"])
-        results.append({
-            "date": d,
-            "day_of_week": date.fromisoformat(d).strftime("%A"),
-            "price": flight["price"],
-            "airline": flight["airline"],
-            "departure": flight["departure"],
-            "arrival": flight["arrival"],
-            "is_direct": flight["is_direct"],
-            "layovers": flight["layovers"],
-            "total_duration_minutes": flight["total_duration_minutes"],
-            "source": flight.get("source", "google"),
-            # Skyscanner-sourced fares carry the itinerary id -> the Book
-            # link deep-links to that one flight's vendor list on Skyscanner.
-            "skyscanner_config": flight.get("itinerary_id"),
-        })
+        for flight in candidates:
+            all_flights.append({
+                "date": d,
+                "day_of_week": day_of_week,
+                "price": flight["price"],
+                "airline": flight["airline"],
+                "departure": flight["departure"],
+                "arrival": flight["arrival"],
+                "is_direct": flight["is_direct"],
+                "layovers": flight["layovers"],
+                "total_duration_minutes": flight["total_duration_minutes"],
+                "source": flight.get("source", "google"),
+                # Skyscanner-sourced fares carry the itinerary id -> the Book
+                # link deep-links to that one flight's vendor list on Skyscanner.
+                "skyscanner_config": flight.get("itinerary_id"),
+            })
 
-    results.sort(key=lambda r: r["price"] if r["price"] is not None else float("inf"))
+    all_flights.sort(key=lambda r: r["price"] if r["price"] is not None else float("inf"))
+
+    # Drop near-duplicates (same airline / times / price / stops) then cap.
+    seen = set()
+    results = []
+    for r in all_flights:
+        key = (r["airline"], r["departure"], r["arrival"], r["price"], r["is_direct"])
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(r)
+        if len(results) >= RESULT_LIMIT:
+            break
 
     return jsonify({
         "country": country,
         "airport": airport,
+        "airport_city": airport_city,
         "origin": origin,
         "results": results,
         "skipped_dates": skipped_dates,

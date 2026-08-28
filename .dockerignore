@@ -1,0 +1,14 @@
+.git
+.gitignore
+venv/
+__pycache__/
+*.pyc
+.env
+.fly-secrets
+config.json
+expenses.json
+prearrival_cache.json
+skyscanner_airports.json
+README.md
+*.md
+.claude/

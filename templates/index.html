@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#E7E3F3">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="FlightFinder">
 <title>Cheapest Flight Finder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -137,10 +143,12 @@
   /* Origin carousel — squishy panel keys */
   .carousel {
     display: flex;
-    gap: 0.8rem;
+    justify-content: safe center;
+    gap: 0.5rem;
     overflow-x: auto;
     scroll-snap-type: x proximity;
-    padding: 0.6rem 0.3rem 0.9rem;
+    margin: 0 -1.4rem;               /* span the full screen so 4 chips can centre */
+    padding: 0.6rem 0.75rem 0.9rem;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
@@ -155,9 +163,9 @@
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    width: 78px;
-    height: 78px;
-    padding: 0.6rem;
+    width: 72px;
+    height: 72px;
+    padding: 0.55rem;
     background: var(--surface-raised);
     border: none;
     border-radius: var(--r-sm);
@@ -306,11 +314,37 @@
     margin-bottom: 0.1rem;
   }
 
+  .tile-city {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
   .tile-country {
     display: block;
     font-size: 0.86rem;
     font-weight: 700;
     color: var(--muted);
+  }
+
+  /* "＋2" badge on destination tiles that offer an airport choice */
+  .tile-more {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.6rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    color: var(--accent-press);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 0.1rem 0.4rem;
+    line-height: 1.5;
+  }
+  .tile[aria-pressed="true"] .tile-more {
+    background: var(--surface-raised);
   }
 
   .notice {
@@ -1018,21 +1052,258 @@
 
   .expense-delete:active { box-shadow: var(--clay-in); }
 
+  /* ============================================================
+     App shell — splash screen, sliding screens, bottom tab bar
+     ============================================================ */
+  html { height: 100%; }
+  body {
+    padding: 0;
+    max-width: none;
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #app {
+    position: absolute;
+    inset: 0;
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #screens {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .screen {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    background: var(--bg);
+  }
+  /* Transition class is added only for the ~340ms of a slide, then removed. */
+  .screen.anim { transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+  .screen-pad { padding: 1.4rem 1.4rem 2.4rem; }
+
+  /* Slim per-screen top bar with a home button */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1.4rem 0.7rem;
+    background: var(--bg);
+  }
+  .topbar-home {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: var(--surface-raised);
+    border: none;
+    border-radius: 50%;
+    box-shadow: var(--clay-sm);
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .topbar-home:active { box-shadow: var(--clay-in); transform: scale(0.95); }
+  .topbar-home:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .topbar-logo { width: 28px; height: 28px; object-fit: contain; display: block; }
+  .topbar-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.3rem;
+    color: var(--ink);
+  }
+  .topbar-title:focus { outline: none; }
+
+  /* Welcome / brand screen */
+  #screen-welcome { display: flex; }
+  .welcome-inner {
+    margin: auto;
+    width: 100%;
+    max-width: 380px;
+    padding: 2.5rem 1.6rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+  }
+  .welcome-logo {
+    width: clamp(160px, 52vw, 240px);
+    height: auto;
+    display: block;
+    margin: 0 auto 0.2rem;
+    filter: drop-shadow(10px 14px 22px var(--umbra-soft));
+  }
+  .welcome-inner h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.12;
+    margin: 0 0 0.7rem;
+  }
+  .welcome-inner h1:focus { outline: none; }
+  .welcome-tagline {
+    color: var(--muted);
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1.55;
+    margin: 0 auto 2.2rem;
+    max-width: 30ch;
+  }
+  .welcome-actions { display: flex; flex-direction: column; gap: 1rem; }
+  .welcome-btn {
+    width: 100%;
+    padding: 1.05rem 1.2rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--ink);
+    background: var(--surface-raised);
+    border: none;
+    border-radius: var(--r-md);
+    box-shadow: var(--clay-key);
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  }
+  .welcome-btn:active { box-shadow: var(--clay-in); transform: scale(0.98); }
+  .welcome-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .welcome-btn.primary { color: var(--on-accent); background: var(--accent); }
+  .welcome-btn.primary:active { background: var(--accent-press); }
+
+  /* Bottom tab bar */
+  #tabbar {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.5rem 0.9rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    box-shadow: 0 -10px 24px var(--umbra-soft);
+    z-index: 50;
+  }
+  .tabbar-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.5rem 0.4rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .tabbar-ico { font-size: 1.15rem; line-height: 1; }
+  .tabbar-btn[aria-selected="true"] {
+    color: var(--accent-press);
+    background: var(--surface-raised);
+    box-shadow: var(--clay-sm);
+  }
+  .tabbar-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* Splash / loading screen */
+  #splash {
+    position: absolute;
+    inset: 0;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    transition: opacity 0.45s ease;
+    animation: splash-failsafe 0.5s linear 4s forwards;
+  }
+  #splash.gone { opacity: 0; pointer-events: none; }
+  .splash-inner { text-align: center; }
+  .splash-logo {
+    width: clamp(150px, 44vw, 220px);
+    height: auto;
+    display: block;
+    margin: 0 auto 0.7rem;
+    filter: drop-shadow(10px 14px 22px var(--umbra-soft));
+    animation: splash-float 1.5s ease-in-out infinite alternate;
+  }
+  .splash-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--muted);
+    margin: 0;
+  }
+  .splash-credit {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--muted);
+    opacity: 0.7;
+    margin: 0.55rem 0 0;
+  }
+  @keyframes splash-float {
+    from { transform: translateY(6px) scale(0.99); }
+    to   { transform: translateY(-8px) scale(1.02); }
+  }
+  @keyframes splash-failsafe {
+    to { opacity: 0; visibility: hidden; pointer-events: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .screen { transition: none; }
+    #splash { transition: opacity 0.2s linear; }
+    .splash-logo { animation: none; }
+  }
+
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <div class="title-row">
-    <h1>Find your next flight</h1>
-    <img class="title-logo" src="{{ url_for('static', filename='logo.png') }}" alt=""
-         onerror="this.style.display='none'">
+  <div id="splash">
+    <div class="splash-inner">
+      <img class="splash-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" onerror="this.style.display='none'">
+      <p class="splash-name">Cheapest Flight Finder</p>
+      <p class="splash-credit">Made by Udi Schmidt</p>
+    </div>
   </div>
-  <p class="tagline">Pick where you're flying from, tap where you want to go, and we'll check {{ 'tomorrow' if window_days == 1 else 'the next ' ~ window_days ~ ' days' }} for the best fare.</p>
 
-  <div class="tab-bar" role="tablist">
-    <button class="tab-btn" id="tab-btn-flights" role="tab" aria-selected="true" type="button">Flights</button>
-    <button class="tab-btn" id="tab-btn-expenses" role="tab" aria-selected="false" type="button">Expenses</button>
-  </div>
+  <div id="app">
+    <div id="screens">
+
+      <section id="screen-welcome" class="screen" aria-labelledby="welcome-heading">
+        <div class="welcome-inner">
+          <img class="welcome-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" onerror="this.style.display='none'">
+          <h1 id="welcome-heading" data-screen-heading tabindex="-1">Find your next flight</h1>
+          <p class="welcome-tagline">Pick where you're flying from, tap where you want to go, and we'll check {{ 'tomorrow' if window_days == 1 else 'the next ' ~ window_days ~ ' days' }} for the best fare.</p>
+          <div class="welcome-actions">
+            <button class="welcome-btn primary" type="button" data-goto="flights">Find flights</button>
+            <button class="welcome-btn" type="button" data-goto="expenses">Trip expenses</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="screen-flights" class="screen" aria-labelledby="flights-heading" hidden inert>
+        <header class="topbar">
+          <button class="topbar-home" type="button" data-goto="welcome" aria-label="Home">
+            <img class="topbar-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" onerror="this.style.display='none'">
+          </button>
+          <span class="topbar-title" id="flights-heading" data-screen-heading tabindex="-1">Flights</span>
+        </header>
+        <div class="screen-pad">
 
   <div id="tab-flights">
   {% if error %}
@@ -1052,7 +1323,7 @@
           aria-selected="{{ 'true' if info.airport == home_airport else 'false' }}"
         >
           <img class="chip-flag" src="https://flagcdn.com/32x24/{{ info.iso2|lower }}.png" srcset="https://flagcdn.com/64x48/{{ info.iso2|lower }}.png 2x" alt="" loading="lazy">
-          <span class="chip-code">{{ info.airport }}</span>
+          <span class="chip-code">{{ 'USA' if name == 'United States' else info.airport }}</span>
         </button>
         {% endfor %}
 
@@ -1082,9 +1353,10 @@
         <p class="section-label">{{ group.label }}</p>
         <div class="tiles">
           {% for country, info in group.countries.items() %}
-          <button class="tile" data-country="{{ country }}" aria-pressed="false">
+          <button class="tile" data-country="{{ country }}"{% if info.airports|length > 1 %} data-multi="{{ info.airports|length }}"{% endif %} aria-pressed="false">
+            {% if info.airports|length > 1 %}<span class="tile-more">＋{{ info.airports|length - 1 }}</span>{% endif %}
             <img class="tile-flag" src="https://flagcdn.com/32x24/{{ info.iso2|lower }}.png" srcset="https://flagcdn.com/64x48/{{ info.iso2|lower }}.png 2x" alt="" loading="lazy">
-            <span class="tile-code">{{ info.airport }}</span>
+            <span class="tile-code">{{ info.airport }}<span class="tile-city"> · {{ info.airport_city }}</span></span>
             <span class="tile-country">{{ country }}</span>
           </button>
           {% endfor %}
@@ -1107,7 +1379,19 @@
   {% endif %}
   </div>
 
-  <div id="tab-expenses" hidden>
+        </div>
+      </section>
+
+      <section id="screen-expenses" class="screen" aria-labelledby="expenses-heading" hidden inert>
+        <header class="topbar">
+          <button class="topbar-home" type="button" data-goto="welcome" aria-label="Home">
+            <img class="topbar-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" onerror="this.style.display='none'">
+          </button>
+          <span class="topbar-title" id="expenses-heading" data-screen-heading tabindex="-1">Expenses</span>
+        </header>
+        <div class="screen-pad">
+
+  <div id="tab-expenses">
     <section class="summary-card">
       <div class="summary-total" id="expense-total">₪0.00</div>
 
@@ -1177,6 +1461,22 @@
     <div class="expense-list" id="expense-list"></div>
   </div>
 
+        </div>
+      </section>
+
+    </div><!-- /#screens -->
+
+    <nav id="tabbar" aria-label="Sections" hidden>
+      <button class="tabbar-btn" type="button" data-goto="flights" aria-selected="true">
+        <span class="tabbar-ico" aria-hidden="true">✈</span><span>Flights</span>
+      </button>
+      <button class="tabbar-btn" type="button" data-goto="expenses" aria-selected="false">
+        <span class="tabbar-ico" aria-hidden="true">₪</span><span>Expenses</span>
+      </button>
+    </nav>
+
+  </div><!-- /#app -->
+
   <div class="modal-overlay" id="airport-modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <p class="modal-title" id="modal-title"></p>
@@ -1200,6 +1500,14 @@
   </div>
 
   <script>
+    // Register the service worker so the app is installable / wrappable as
+    // a TWA. updateViaCache:'none' -> the browser always revalidates sw.js.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
+      });
+    }
+
     const defaultAirport = {{ home_airport|tojson }};
     const windowDays = {{ window_days|tojson }};
     const dayWord = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
@@ -1298,7 +1606,7 @@
         });
         modalOptions.appendChild(btn);
       });
-      airportModal.hidden = false;
+      showAirportModal();
     }
 
     function openRegionCountryPicker(region, chipEl) {
@@ -1325,10 +1633,10 @@
         modalOptions.appendChild(btn);
       });
 
-      airportModal.hidden = false;
+      showAirportModal();
     }
 
-    function closeModal() { airportModal.hidden = true; }
+    function closeModal() { hideModalViaHistory('airport-modal', airportModal); }
 
     document.getElementById('modal-cancel').addEventListener('click', closeModal);
     airportModal.addEventListener('click', (e) => { if (e.target === airportModal) closeModal(); });
@@ -1387,11 +1695,13 @@
       return html || `<p class="prearrival-error">Nothing came back — try refreshing.</p>`;
     }
 
-    function closePreArrival() { preArrivalModal.hidden = true; }
+    function closePreArrival() { hideModalViaHistory('prearrival-modal', preArrivalModal); }
     document.getElementById('prearrival-close').addEventListener('click', closePreArrival);
     preArrivalModal.addEventListener('click', (e) => { if (e.target === preArrivalModal) closePreArrival(); });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !preArrivalModal.hidden) closePreArrival();
+      if (e.key !== 'Escape') return;
+      if (!preArrivalModal.hidden) closePreArrival();
+      else if (!airportModal.hidden) closeModal();
     });
 
     // Passport choice drives which country the visa info is written for.
@@ -1421,7 +1731,7 @@
       currentPreArrivalCountry = country;
       preArrivalTitle.textContent = `Before you go — ${country}`;
       preArrivalSub.textContent = 'Visa, arrival forms and entry essentials.';
-      preArrivalModal.hidden = false;
+      showPreArrivalModal();
 
       const cacheKey = `${country}|${selectedPassport}`;
       const cached = !force && preArrivalCache.get(cacheKey);
@@ -1663,10 +1973,11 @@
 
     function renderResults(data) {
       results.hidden = false;
+      const n = data.results.length;
       const head = `
         <div class="results-head">
           <span class="results-title">${data.origin} → ${data.airport}</span>
-          <span class="results-scope">${dayWord(data.window_days).toUpperCase()} SCANNED${directOnly ? ' · DIRECT ONLY' : ''}</span>
+          <span class="results-scope">${n} OPTION${n === 1 ? '' : 'S'}${directOnly ? ' · DIRECT ONLY' : ''}</span>
         </div>
       `;
 
@@ -1715,10 +2026,12 @@
       results.innerHTML = head + rows + skippedNote;
     }
 
-    async function runSearch(country) {
+    async function runSearch(country, destCode) {
       renderLoading(country);
       try {
-        const resp = await fetch(`/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}`);
+        let url = `/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}`;
+        if (destCode) url += `&dest=${encodeURIComponent(destCode)}`;
+        const resp = await fetch(url);
         const data = await resp.json();
 
         if (!resp.ok) {
@@ -1771,6 +2084,39 @@
       showAllBtn.hidden = false;
     }
 
+    function selectDestination(tile, country, destCode) {
+      if (activeTile) activeTile.setAttribute('aria-pressed', 'false');
+      tile.setAttribute('aria-pressed', 'true');
+      activeTile = tile;
+      filterToDestination(tile);
+      runSearch(country, destCode);
+      openPreArrival(country);
+    }
+
+    // Countries with more than one airport ask which one to fly into.
+    function openDestinationPicker(country, tile) {
+      const airports = (ORIGIN_DATA[country] && ORIGIN_DATA[country].airports) || [];
+      modalTitle.textContent = `Which airport in ${country}?`;
+      modalSub.textContent = 'Pick where you want to fly into.';
+      modalOptions.innerHTML = '';
+      airports.forEach(a => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'modal-option';
+        btn.innerHTML = `<span class="modal-option-code">${a.code}</span><span class="modal-option-name">${escHtml(a.name || a.city)}</span>`;
+        btn.addEventListener('click', () => {
+          // Swap this modal out for the pre-arrival modal without a history
+          // round-trip (history.back() is async and would race the next push).
+          const wasModal = modalStack.length && modalStack[modalStack.length - 1] === 'airport-modal';
+          if (wasModal) { modalStack.pop(); history.replaceState({ screen: currentScreen }, ''); }
+          airportModal.hidden = true;
+          selectDestination(tile, country, a.code);
+        });
+        modalOptions.appendChild(btn);
+      });
+      showAirportModal();
+    }
+
     document.querySelectorAll('.tile').forEach(tile => {
       tile.addEventListener('click', () => {
         if (activeTile === tile) {
@@ -1780,13 +2126,12 @@
 
         const country = tile.dataset.country;
 
-        if (activeTile) activeTile.setAttribute('aria-pressed', 'false');
-        tile.setAttribute('aria-pressed', 'true');
-        activeTile = tile;
+        if (tile.dataset.multi) {
+          openDestinationPicker(country, tile);
+          return;
+        }
 
-        filterToDestination(tile);
-        runSearch(country);
-        openPreArrival(country);
+        selectDestination(tile, country, null);
       });
     });
 
@@ -1924,27 +2269,155 @@
       });
     }
 
-    // --- Tabs ---
-    const tabBtnFlights = document.getElementById('tab-btn-flights');
-    const tabBtnExpenses = document.getElementById('tab-btn-expenses');
-    const tabFlights = document.getElementById('tab-flights');
-    const tabExpenses = document.getElementById('tab-expenses');
+    // --- Screen navigation: welcome / flights / expenses, with sliding transitions ---
+    const SCREEN_ORDER = ['welcome', 'flights', 'expenses'];
+    const screenEls = {
+      welcome: document.getElementById('screen-welcome'),
+      flights: document.getElementById('screen-flights'),
+      expenses: document.getElementById('screen-expenses'),
+    };
+    const tabbar = document.getElementById('tabbar');
+    let currentScreen = 'welcome';
     let expensesLoaded = false;
 
-    function showTab(name) {
-      const isFlights = name === 'flights';
-      tabFlights.hidden = !isFlights;
-      tabExpenses.hidden = isFlights;
-      tabBtnFlights.setAttribute('aria-selected', String(isFlights));
-      tabBtnExpenses.setAttribute('aria-selected', String(!isFlights));
-      if (!isFlights && !expensesLoaded) {
-        expensesLoaded = true;
-        loadExpenses();
+    function updateChrome() {
+      const onSub = currentScreen === 'flights' || currentScreen === 'expenses';
+      tabbar.hidden = !onSub;
+      tabbar.querySelectorAll('.tabbar-btn').forEach(b => {
+        b.setAttribute('aria-selected', String(b.dataset.goto === currentScreen));
+      });
+    }
+
+    const screensEl = document.getElementById('screens');
+    let navGen = 0;
+
+    function focusHeading(el) {
+      const h = el.querySelector('[data-screen-heading]');
+      if (!h) return;
+      try { h.focus({ preventScroll: true }); } catch (_) { /* skip focus rather than risk a scroll */ }
+    }
+
+    // Clean resting state: exactly one screen in layout, no transforms, no stray scroll.
+    function settleScreens(name) {
+      SCREEN_ORDER.forEach(k => {
+        const el = screenEls[k];
+        el.classList.remove('anim');
+        el.style.transform = '';
+        if (k === name) {
+          el.hidden = false;
+          el.removeAttribute('inert');
+        } else {
+          el.hidden = true;
+          el.setAttribute('inert', '');
+        }
+      });
+      screensEl.scrollLeft = 0;
+      screensEl.scrollTop = 0;
+    }
+
+    function goToScreen(name, opts) {
+      opts = opts || {};
+      if (!screenEls[name] || name === currentScreen) return;
+      const gen = ++navGen;
+      const fromEl = screenEls[currentScreen];
+      const toEl = screenEls[name];
+      const forward = SCREEN_ORDER.indexOf(name) > SCREEN_ORDER.indexOf(currentScreen);
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      currentScreen = name;
+      updateChrome();
+      if (name === 'expenses' && !expensesLoaded) { expensesLoaded = true; loadExpenses(); }
+      if (opts.push !== false) history.pushState({ screen: name }, '');
+
+      // Reset slate, reveal the incoming screen.
+      SCREEN_ORDER.forEach(k => { screenEls[k].classList.remove('anim'); screenEls[k].style.transform = ''; });
+      toEl.hidden = false;
+      toEl.removeAttribute('inert');
+      toEl.scrollTop = 0;
+      screensEl.scrollLeft = 0;
+
+      const finish = () => {
+        if (gen !== navGen) return;               // a newer navigation superseded this one
+        settleScreens(name);
+        focusHeading(toEl);
+      };
+
+      if (reduce) { finish(); return; }
+
+      fromEl.hidden = false;
+      toEl.style.transform = 'translateX(' + (forward ? '100%' : '-100%') + ')';
+      fromEl.style.transform = 'translateX(0)';
+      void toEl.offsetWidth;                       // commit start positions
+      toEl.classList.add('anim');
+      fromEl.classList.add('anim');
+      toEl.style.transform = 'translateX(0)';
+      fromEl.style.transform = 'translateX(' + (forward ? '-100%' : '100%') + ')';
+
+      const onEnd = (e) => {
+        if (e.target !== toEl || e.propertyName !== 'transform') return;
+        toEl.removeEventListener('transitionend', onEnd);
+        finish();
+      };
+      toEl.addEventListener('transitionend', onEnd);
+      setTimeout(finish, 460);                     // guaranteed cleanup if the transition stalls or never fires
+    }
+
+    // Anything with data-goto navigates: welcome buttons, home buttons, tab bar.
+    document.querySelectorAll('[data-goto]').forEach(el => {
+      el.addEventListener('click', () => goToScreen(el.dataset.goto));
+    });
+
+    // --- History / Android back button ---
+    // Each forward nav and each modal open pushes a history entry; popstate unwinds them.
+    const modalStack = [];
+
+    function registerModalOpen(id) {
+      modalStack.push(id);
+      history.pushState({ screen: currentScreen, modal: id }, '');
+    }
+    function showAirportModal() {
+      if (airportModal.hidden) { airportModal.hidden = false; registerModalOpen('airport-modal'); }
+    }
+    function showPreArrivalModal() {
+      if (preArrivalModal.hidden) { preArrivalModal.hidden = false; registerModalOpen('prearrival-modal'); }
+    }
+    function hideModalViaHistory(id, el) {
+      if (modalStack.length && modalStack[modalStack.length - 1] === id) {
+        history.back();          // popstate performs the actual hide + stack pop
+      } else {
+        el.hidden = true;
       }
     }
 
-    tabBtnFlights.addEventListener('click', () => showTab('flights'));
-    tabBtnExpenses.addEventListener('click', () => showTab('expenses'));
+    window.addEventListener('popstate', (e) => {
+      if (modalStack.length) {
+        const id = modalStack.pop();
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+        return;
+      }
+      goToScreen((e.state && e.state.screen) || 'welcome', { push: false });
+    });
+
+    history.replaceState({ screen: 'welcome' }, '');
+    settleScreens('welcome');
+    updateChrome();
+
+    // --- Splash: hold for a beat, then reveal the welcome screen ---
+    (function () {
+      const splash = document.getElementById('splash');
+      if (!splash) return;
+      const SPLASH_MIN = 1200;
+      const t0 = performance.now();
+      function dismiss() {
+        splash.classList.add('gone');
+        focusHeading(screenEls.welcome);
+        setTimeout(() => { splash.hidden = true; }, 500);
+      }
+      window.addEventListener('load', () => {
+        setTimeout(dismiss, Math.max(0, SPLASH_MIN - (performance.now() - t0)));
+      });
+    })();
 
     // --- Expense form ---
     const expenseCountrySelect = document.getElementById('expense-country');

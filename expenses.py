@@ -7,7 +7,10 @@ import uuid
 
 import requests
 
-EXPENSES_PATH = os.path.join(os.path.dirname(__file__), "expenses.json")
+# Writable state lives in DATA_DIR when set (a persistent volume in
+# production); otherwise next to the code, as before.
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.dirname(__file__)
+EXPENSES_PATH = os.path.join(DATA_DIR, "expenses.json")
 CURRENCY_API_URL = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/{}.json"
 TARGET_CURRENCY = "ils"
 

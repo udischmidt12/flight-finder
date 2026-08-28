@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.fly.flight_finder_udi.twa",
+      "sha256_cert_fingerprints": [
+        "A0:BF:3A:D1:B8:35:05:30:26:39:05:29:BD:1E:CD:61:1F:10:1A:79:1C:4A:E7:E3:F0:98:47:A3:B3:18:3D:9E"
+      ]
+    }
+  }
+]
