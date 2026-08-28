@@ -25,7 +25,10 @@ from expenses import load_expenses, add_expense, update_expense, delete_expense,
 app = Flask(__name__)
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
-SEARCH_WINDOW_DAYS = 1  # temporarily 1 to conserve SerpApi quota; was 7
+# Search window: one SerpApi call per day, so the user picks it per search
+# (Tomorrow ... 1 week). Compare-all always forces 1 to stay cheap.
+DEFAULT_WINDOW_DAYS = 3
+MAX_WINDOW_DAYS = 7
 RESULT_LIMIT = 5        # flight options to return per search (no extra API calls)
 AIRPORT_CODE_RE = re.compile(r"^[A-Za-z]{3}$")
 
@@ -135,7 +138,7 @@ def index():
             origin_regions=origin_regions(),
             region_labels=REGION_LABELS,
             home_airport=None,
-            window_days=SEARCH_WINDOW_DAYS,
+            window_days=DEFAULT_WINDOW_DAYS,
             expense_categories=CATEGORIES,
         )
 
@@ -147,7 +150,7 @@ def index():
         origin_regions=origin_regions(),
         region_labels=REGION_LABELS,
         home_airport=config.get("home_airport"),
-        window_days=SEARCH_WINDOW_DAYS,
+        window_days=DEFAULT_WINDOW_DAYS,
         expense_categories=CATEGORIES,
     )
 
@@ -185,8 +188,14 @@ def search_country(country):
     airport_city = next(
         (a["city"] for a in entry["airports"] if a["code"] == airport), airport)
 
+    try:
+        window_days = int(request.args.get("days", DEFAULT_WINDOW_DAYS))
+    except (TypeError, ValueError):
+        window_days = DEFAULT_WINDOW_DAYS
+    window_days = max(1, min(MAX_WINDOW_DAYS, window_days))
+
     today = date.today()
-    dates = [(today + timedelta(days=i)).isoformat() for i in range(1, SEARCH_WINDOW_DAYS + 1)]
+    dates = [(today + timedelta(days=i)).isoformat() for i in range(1, window_days + 1)]
 
     all_flights = []
     skipped_dates = []
@@ -264,7 +273,7 @@ def search_country(country):
         "origin": origin,
         "results": results,
         "skipped_dates": skipped_dates,
-        "window_days": SEARCH_WINDOW_DAYS,
+        "window_days": window_days,
     })
 
 

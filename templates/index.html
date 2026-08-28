@@ -961,6 +961,9 @@
     box-shadow: var(--clay-in);
   }
 
+  .window-picker { margin-top: 1.5rem; }
+  .window-picker .section-label { margin-bottom: 0.7rem; }
+
   .save-expense-btn {
     background: var(--accent);
     color: var(--on-accent);
@@ -1288,7 +1291,7 @@
         <div class="welcome-inner">
           <img class="welcome-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" onerror="this.style.display='none'">
           <h1 id="welcome-heading" data-screen-heading tabindex="-1">Find your next flight</h1>
-          <p class="welcome-tagline">Pick where you're flying from, tap where you want to go, and we'll check {{ 'tomorrow' if window_days == 1 else 'the next ' ~ window_days ~ ' days' }} for the best fare.</p>
+          <p class="welcome-tagline">Pick where you're flying from, tap where you want to go, and we'll find the best fare in the days ahead.</p>
           <div class="welcome-actions">
             <button class="welcome-btn primary" type="button" data-goto="flights">Find flights</button>
             <button class="welcome-btn" type="button" data-goto="expenses">Trip expenses</button>
@@ -1372,6 +1375,15 @@
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </label>
         <span class="option-label">Direct flights only</span>
+      </div>
+
+      <div class="window-picker">
+        <p class="section-label">Search window</p>
+        <div class="category-pills" id="window-pills" role="group" aria-label="How many days ahead to search">
+          {% for d, lbl in [(1, 'Tomorrow'), (2, '2 days'), (3, '3 days'), (4, '4 days'), (5, '5 days'), (6, '6 days'), (7, '1 week')] %}
+          <button class="category-pill" type="button" data-days="{{ d }}" aria-pressed="{{ 'true' if d == window_days else 'false' }}">{{ lbl }}</button>
+          {% endfor %}
+        </div>
       </div>
     </section>
 
@@ -1509,7 +1521,13 @@
     }
 
     const defaultAirport = {{ home_airport|tojson }};
-    const windowDays = {{ window_days|tojson }};
+    // How many days ahead to scan (1 = tomorrow only ... 7 = next week).
+    // One SerpApi call per day, so the user picks it; remembered per browser.
+    let windowDays = {{ window_days|tojson }};
+    try {
+      const saved = parseInt(localStorage.getItem('windowDays'), 10);
+      if (saved >= 1 && saved <= 7) windowDays = saved;
+    } catch (_) {}
     const dayWord = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
     const ORIGIN_DATA = {{ origins|tojson }};
     const ORIGIN_REGIONS = {{ origin_regions|tojson }};
@@ -1533,6 +1551,7 @@
 
     let origin = { airport: defaultAirport, country: null };
     let activeTile = null;
+    let lastSearch = null;   // { country, destCode } -- to re-run when a filter changes
     let directOnly = false;
     let gpsCoords = null;
     let gpsCountry = null;
@@ -1977,7 +1996,7 @@
       const head = `
         <div class="results-head">
           <span class="results-title">${data.origin} → ${data.airport}</span>
-          <span class="results-scope">${n} OPTION${n === 1 ? '' : 'S'}${directOnly ? ' · DIRECT ONLY' : ''}</span>
+          <span class="results-scope">${n} OPTION${n === 1 ? '' : 'S'} · ${data.window_days === 1 ? 'TOMORROW' : data.window_days + ' DAYS'}${directOnly ? ' · DIRECT ONLY' : ''}</span>
         </div>
       `;
 
@@ -2027,9 +2046,10 @@
     }
 
     async function runSearch(country, destCode) {
+      lastSearch = { country, destCode: destCode || null };
       renderLoading(country);
       try {
-        let url = `/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}`;
+        let url = `/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}&days=${windowDays}`;
         if (destCode) url += `&dest=${encodeURIComponent(destCode)}`;
         const resp = await fetch(url);
         const data = await resp.json();
@@ -2139,7 +2159,26 @@
 
     directToggle.addEventListener('change', () => {
       directOnly = directToggle.checked;
-      if (activeTile) runSearch(activeTile.dataset.country);
+      if (lastSearch) runSearch(lastSearch.country, lastSearch.destCode);
+    });
+
+    // --- Search window pills (Tomorrow ... 1 week) ---
+    const windowPills = document.getElementById('window-pills');
+    function syncWindowPills() {
+      windowPills.querySelectorAll('.category-pill').forEach(p => {
+        p.setAttribute('aria-pressed', String(Number(p.dataset.days) === windowDays));
+      });
+    }
+    syncWindowPills();
+    windowPills.querySelectorAll('.category-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const d = Number(pill.dataset.days);
+        if (d === windowDays) return;
+        windowDays = d;
+        try { localStorage.setItem('windowDays', String(d)); } catch (_) {}
+        syncWindowPills();
+        if (lastSearch) runSearch(lastSearch.country, lastSearch.destCode);
+      });
     });
 
     // --- Compare all destinations ---
@@ -2252,7 +2291,9 @@
           `;
 
           try {
-            const resp = await fetch(`/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}`);
+            // Compare-all is a quick sweep -- always just tomorrow, never the
+            // window picker, so it can't multiply into dozens of API calls.
+            const resp = await fetch(`/search/${encodeURIComponent(country)}?origin=${encodeURIComponent(origin.airport)}&direct_only=${directOnly}&days=1`);
             const data = await resp.json();
             if (resp.ok && data.results.length > 0) {
               found.push({ ...data.results[0], country, origin: data.origin, airport: data.airport });
